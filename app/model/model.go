@@ -126,6 +126,8 @@ func AutoMigrate() error {
 		&NotifyRecord{},
 		&Conf{},
 		&Rate{},
+		&EVMScanJob{},
+		&EVMPaymentClaim{},
 	})
 }
 

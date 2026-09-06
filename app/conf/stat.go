@@ -14,6 +14,8 @@ type stat struct {
 	index   int // 当前位置
 	total   int // 已记录总数
 	succ    int // 成功记录数
+	block   string
+	time    int64
 }
 
 type info struct {
@@ -22,10 +24,7 @@ type info struct {
 	Time  int64  `json:"time"`
 }
 
-var (
-	data sync.Map // map[string]*stat
-	last sync.Map
-)
+var data sync.Map // map[string]*stat
 
 func getStat(net string) *stat {
 	val, _ := data.LoadOrStore(net, &stat{
@@ -35,7 +34,6 @@ func getStat(net string) *stat {
 }
 
 func RecordSuccess(net, block string) {
-	last.Store(net, info{Block: block, Succ: GetSuccessRate(net), Time: time.Now().Unix()})
 	s := getStat(net)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -51,6 +49,8 @@ func RecordSuccess(net, block string) {
 	if s.total < maxRecords {
 		s.total++
 	}
+	s.block = block
+	s.time = time.Now().Unix()
 }
 
 func RecordFailure(net string) {
@@ -71,8 +71,13 @@ func RecordFailure(net string) {
 
 func GetStats() map[string]info {
 	var m = make(map[string]info)
-	last.Range(func(k, v interface{}) bool {
-		m[k.(string)] = v.(info)
+	data.Range(func(k, v interface{}) bool {
+		s := v.(*stat)
+		s.mu.RLock()
+		if s.total > 0 {
+			m[k.(string)] = info{Block: s.block, Succ: s.successRate(), Time: s.time}
+		}
+		s.mu.RUnlock()
 
 		return true
 	})
@@ -84,9 +89,13 @@ func GetSuccessRate(net string) string {
 	s := getStat(net)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.successRate()
+}
 
+// Caller holds s.mu for a consistent sample and last-success snapshot.
+func (s *stat) successRate() string {
 	if s.total == 0 {
-		return "100.00%"
+		return ""
 	}
 
 	return fmt.Sprintf("%.2f%%", float64(s.succ)/float64(s.total)*100)

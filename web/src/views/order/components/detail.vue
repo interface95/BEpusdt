@@ -1,5 +1,12 @@
 <template>
-  <a-modal :width="detailDialogWidth" :visible="visible" @close="onClose" @cancel="onClose" @update:visible="onClose" unmount-on-close>
+  <a-modal
+    :width="detailDialogWidth"
+    :visible="visible"
+    @close="onClose"
+    @cancel="onClose"
+    @update:visible="onClose"
+    unmount-on-close
+  >
     <template #title>
       <div class="detail-modal-title">
         <icon-star />
@@ -159,7 +166,12 @@
       </a-card>
 
       <!-- 回调信息卡片 -->
-      <a-card class="detail-card" title="回调信息" :bordered="false" v-if="detailData.status === 2 || detailData.status === 5">
+      <a-card
+        class="detail-card"
+        title="回调信息"
+        :bordered="false"
+        v-if="detailData.status === 2 || detailData.status === 5 || detailData.notify_error"
+      >
         <a-row :gutter="24">
           <a-col :xs="24" :sm="24" :md="12">
             <div class="detail-item">
@@ -187,10 +199,19 @@
             </div>
           </a-col>
         </a-row>
+        <div v-if="detailData.notify_error" class="detail-item">
+          <div class="detail-label"><icon-exclamation-circle /><span>最近回调错误</span></div>
+          <div class="detail-value diagnostic-value">{{ detailData.notify_error }}</div>
+        </div>
       </a-card>
 
       <!-- 区块链信息卡片 -->
-      <a-card class="detail-card" title="区块链数据" :bordered="false" v-if="detailData.status === 2 || detailData.status === 5">
+      <a-card
+        class="detail-card"
+        title="区块链数据"
+        :bordered="false"
+        v-if="detailData.status === 2 || detailData.status === 5 || detailData.confirmation_error"
+      >
         <a-row :gutter="24" v-if="detailData.ref_hash">
           <a-col :xs="24" :sm="24" :md="12" v-if="detailData.ref_block_num">
             <div class="detail-item">
@@ -224,6 +245,10 @@
             </div>
           </a-col>
         </a-row>
+        <div v-if="detailData.confirmation_error" class="detail-item">
+          <div class="detail-label"><icon-exclamation-circle /><span>最近确认错误</span></div>
+          <div class="detail-value diagnostic-value">{{ detailData.confirmation_error }}</div>
+        </div>
       </a-card>
 
       <!-- 时间信息卡片 -->
@@ -384,6 +409,11 @@ const getCurrencySymbol = (fiat: string) => currencySymbolMap[fiat] || "";
 </script>
 
 <style lang="scss" scoped>
+.diagnostic-value {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 :deep(.arco-modal-body) {
   max-height: calc(100vh - 172px);
   overflow-y: auto;

@@ -26,6 +26,8 @@ type transfer struct {
 	Timestamp   time.Time       `json:"timestamp"`
 	TradeType   model.TradeType `json:"trade_type"`
 	BlockNum    int             `json:"block_num"`
+	EventIndex  string          `json:"event_index,omitempty"`
+	BlockHash   string          `json:"block_hash,omitempty"`
 }
 
 type resource struct {
@@ -194,7 +196,11 @@ func notOrderTransferHandle(ctx context.Context) {
 					var record = model.NotifyRecord{Txid: t.TxHash}
 					model.Db.Create(&record)
 
-					notifier.NonOrderTransfer(model.TronTransfer(t), wa)
+					notifier.NonOrderTransfer(model.TronTransfer{
+						Network: t.Network, TxHash: t.TxHash, Amount: t.Amount,
+						FromAddress: t.FromAddress, RecvAddress: t.RecvAddress,
+						Timestamp: t.Timestamp, TradeType: t.TradeType, BlockNum: t.BlockNum,
+					}, wa)
 				}
 			}
 
@@ -255,7 +261,10 @@ func tronResourceHandle(ctx context.Context) {
 }
 
 func markFinalConfirmed(o model.Order) {
-	o.SetSuccess()
+	if err := o.SetSuccess(); err != nil {
+		log.Task.Warn("mark order successful failed: ", err)
+		return
+	}
 	notifyOrderSuccess(o)
 }
 
@@ -359,8 +368,9 @@ func expireWaitingOrders() {
 			continue
 		}
 
-		t.SetExpired()
-		notify.Bepusdt(t)
+		if err := t.SetExpired(); err == nil {
+			notify.Bepusdt(t)
+		}
 	}
 }
 
@@ -377,8 +387,9 @@ func getConfirmingOrders(tradeType []model.TradeType) []model.Order {
 	for _, order := range orders {
 		if time.Now().Unix() >= order.ExpiredAt.Unix() {
 			if order.ConfirmedAt == nil || order.ConfirmedAt.IsZero() || !order.ConfirmedAt.Before(order.ExpiredAt) {
-				order.SetFailed()
-				notify.Bepusdt(order)
+				if err := order.SetFailed(); err == nil {
+					notify.Bepusdt(order)
+				}
 
 				continue
 			}

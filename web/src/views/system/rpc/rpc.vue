@@ -70,6 +70,45 @@
             </div>
           </div>
         </div>
+
+        <div class="rpc-diagnostics">
+          <div class="diagnostics-header">
+            <span>BSC 扫描诊断</span>
+            <a-tag size="small" :color="diagnosticStatus.color">{{ diagnosticStatus.label }}</a-tag>
+            <span v-if="statsRefreshFailed" class="diagnostics-stale">刷新失败</span>
+          </div>
+          <dl class="diagnostics-grid">
+            <div>
+              <dt>待处理任务</dt>
+              <dd>{{ bscDiagnostic?.available ? bscDiagnostic.backlog_jobs : "—" }}</dd>
+            </div>
+            <div>
+              <dt>下次重试</dt>
+              <dd>{{ formatDiagnosticTime(bscDiagnostic?.next_retry) }}</dd>
+            </div>
+            <div>
+              <dt>已完成实时高度</dt>
+              <dd>
+                {{
+                  bscDiagnostic?.completed_live_height == null ? "—" : "#" + bscDiagnostic.completed_live_height.toLocaleString()
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt>最早确认中订单</dt>
+              <dd>{{ formatDiagnosticTime(bscDiagnostic?.oldest_confirming) }}</dd>
+            </div>
+            <div class="diagnostic-error">
+              <dt>最近错误</dt>
+              <dd>
+                {{ bscDiagnostic?.last_error || "—" }}
+                <span v-if="bscDiagnostic?.last_error_at" class="diagnostic-error-time">{{
+                  formatDiagnosticTime(bscDiagnostic.last_error_at)
+                }}</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
       </a-card>
 
       <!-- 主要内容：配置 -->
@@ -80,11 +119,7 @@
               <icon-settings />
             </div>
             <span>区块网络配置</span>
-            <a
-              href="https://github.com/v03413/BEpusdt/blob/main/docs/faq/rpc-endpoint.md"
-              target="_blank"
-              class="title-doc-link"
-            >
+            <a href="https://github.com/v03413/BEpusdt/blob/main/docs/faq/rpc-endpoint.md" target="_blank" class="title-doc-link">
               <icon-exclamation-circle />
               必读：节点配置说明
             </a>
@@ -99,7 +134,14 @@
               </template>
               重置
             </a-button>
-            <a-button type="primary" @click="handleSave" :loading="saveLoading" size="small" class="action-btn save-btn">
+            <a-button
+              type="primary"
+              @click="handleSave"
+              :loading="saveLoading"
+              :disabled="!configLoaded"
+              size="small"
+              class="action-btn save-btn"
+            >
               <template #icon>
                 <icon-save />
               </template>
@@ -194,12 +236,7 @@
                   :md="12"
                   :lg="8"
                 >
-                  <a-form-item
-                    :field="network.key"
-                    :label="network.label"
-                    :rules="[{ required: true, message: `请输入${network.label}` }]"
-                    class="network-form-item"
-                  >
+                  <a-form-item :field="network.key" :label="network.label" :rules="httpURLRules(true)" class="network-form-item">
                     <a-input
                       v-model="formData[network.key]"
                       :placeholder="`请输入 ${network.label}`"
@@ -217,6 +254,69 @@
                 </a-col>
               </a-row>
             </div>
+
+            <div class="rpc-extra-section">
+              <div class="section-header"><span class="header-title">BSC 分流节点</span></div>
+              <a-row :gutter="[16, 6]">
+                <a-col :xs="24" :md="12">
+                  <a-form-item
+                    field="rpc_endpoint_bsc_read"
+                    label="读取 RPC（可选）"
+                    :rules="httpURLRules(false)"
+                    class="network-form-item"
+                  >
+                    <a-input v-model="formData.rpc_endpoint_bsc_read" allow-clear size="small" class="network-input" />
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :md="12">
+                  <a-form-item
+                    field="rpc_endpoint_bsc_read_backups"
+                    label="读取备用 RPC（逗号分隔）"
+                    :rules="urlListRules"
+                    class="network-form-item"
+                  >
+                    <a-textarea
+                      v-model="formData.rpc_endpoint_bsc_read_backups"
+                      allow-clear
+                      size="small"
+                      class="network-input"
+                      :auto-size="{ minRows: 1, maxRows: 4 }"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :md="12">
+                  <a-form-item
+                    field="rpc_endpoint_bsc_log_backups"
+                    label="日志备用 RPC（逗号分隔）"
+                    :rules="urlListRules"
+                    class="network-form-item"
+                  >
+                    <a-textarea
+                      v-model="formData.rpc_endpoint_bsc_log_backups"
+                      allow-clear
+                      size="small"
+                      class="network-input"
+                      :auto-size="{ minRows: 1, maxRows: 4 }"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :xs="24" :md="12">
+                  <a-form-item
+                    field="notify_waiting_disabled_urls"
+                    label="停发等待通知的回调 URL（JSON 数组）"
+                    :rules="callbackURLRules"
+                    class="network-form-item"
+                  >
+                    <a-textarea
+                      v-model="formData.notify_waiting_disabled_urls"
+                      size="small"
+                      class="network-input"
+                      :auto-size="{ minRows: 1, maxRows: 4 }"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </div>
           </a-form>
         </div>
       </a-card>
@@ -227,7 +327,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { Message } from "@arco-design/web-vue";
-import { setsConfAPI, getRpcConfAPI } from "@/api/modules/conf/index";
+import { setsConfAPI, getRpcConfAPI, type RpcStat, type RpcDiagnostic } from "@/api/modules/conf/index";
 import {
   IconSettings,
   IconSave,
@@ -275,22 +375,89 @@ const allNetworks = [
   { key: "rpc_global_config_url_ton", statKey: "ton", label: "TON", icon: IconLink, color: "#0088cc" }
 ];
 
-interface StatInfo {
-  block: string;
-  succ: string;
-  time: number;
-}
-
 const loading = ref<boolean>(false);
 const saveLoading = ref<boolean>(false);
+const configLoaded = ref(false);
 const formRef = ref();
 const formData = reactive<Record<string, string>>({});
 const originalData = ref<Record<string, string>>({});
-const statsData = ref<Record<string, StatInfo>>({});
+const statsData = ref<Record<string, RpcStat>>({});
+const diagnosticsData = ref<Record<string, RpcDiagnostic>>({});
+const statsRefreshFailed = ref(false);
+const optionalDefaults: Record<string, string> = {
+  rpc_endpoint_tron_grid_api_key: "",
+  rpc_endpoint_bsc_read: "",
+  rpc_endpoint_bsc_read_backups: "",
+  rpc_endpoint_bsc_log_backups: "",
+  notify_waiting_disabled_urls: "[]"
+};
+const bscDiagnostic = computed(() => diagnosticsData.value.bsc);
+const diagnosticStatus = computed(() => {
+  const diagnostic = bscDiagnostic.value;
+  if (statsRefreshFailed.value || !diagnostic?.available || diagnostic.idle == null) return { label: "未知", color: "gray" };
+  if (diagnostic.idle) return { label: "空闲", color: "gray" };
+  return { label: "有待处理任务", color: "arcoblue" };
+});
+
+const validHTTPURL = (value: string): boolean => {
+  if (!value || /[\s\u0000-\u001f\u007f\\#]/.test(value) || !/^https?:\/\//.test(value) || /%(?![a-f\d]{2})/i.test(value))
+    return false;
+  try {
+    const url = new URL(value);
+    return !!url.hostname && (!url.port || Number(url.port) > 0);
+  } catch {
+    return false;
+  }
+};
+const httpURLRules = (required: boolean) => [
+  {
+    validator: (value: string, callback: (error?: string) => void) => {
+      const raw = value?.trim() || "";
+      callback(
+        (!raw && !required) || (validHTTPURL(raw) && Array.from(raw).length <= 512)
+          ? undefined
+          : "请输入有效的 HTTP(S) URL，最多 512 个字符"
+      );
+    }
+  }
+];
+const urlListRules = [
+  {
+    validator: (value: string, callback: (error?: string) => void) => {
+      const raw = value?.trim() || "";
+      callback(
+        !raw ||
+          (Array.from(raw).length <= 512 && raw.split(",").length <= 3 && raw.split(",").every(url => validHTTPURL(url.trim())))
+          ? undefined
+          : "请输入逗号分隔的 HTTP(S) URL，最多 3 个、共 512 个字符"
+      );
+    }
+  }
+];
+const callbackURLRules = [
+  {
+    validator: (value: string, callback: (error?: string) => void) => {
+      try {
+        const urls = JSON.parse(value);
+        if (
+          Array.from(value).length <= 512 &&
+          Array.isArray(urls) &&
+          urls.every(url => typeof url === "string" && validHTTPURL(url))
+        ) {
+          callback();
+          return;
+        }
+      } catch {
+        /* Validation message below is shared by malformed JSON and invalid entries. */
+      }
+      callback("请输入精确 HTTP(S) 回调 URL 的 JSON 数组，最多 512 个字符");
+    }
+  }
+];
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-const getNetStat = (statKey: string): StatInfo | undefined => {
+const getNetStat = (statKey: string): RpcStat | undefined => {
   return statsData.value[statKey];
 };
 
@@ -310,6 +477,7 @@ const getStatusDotClass = (statKey: string) => {
   const stat = statsData.value[statKey];
   if (!stat) return "dot-unknown";
   const succ = parseFloat(stat.succ);
+  if (!Number.isFinite(succ) || statsRefreshFailed.value || diagnosticsData.value[statKey]?.idle) return "dot-unknown";
   if (succ >= 95) return "dot-good";
   if (succ >= 80) return "dot-warn";
   return "dot-bad";
@@ -318,6 +486,7 @@ const getStatusDotClass = (statKey: string) => {
 const getSuccRateClass = (succ?: string) => {
   if (!succ) return "";
   const val = parseFloat(succ);
+  if (!Number.isFinite(val)) return "";
   if (val >= 95) return "succ-good";
   if (val >= 80) return "succ-warn";
   return "succ-bad";
@@ -330,20 +499,32 @@ const formatTime = (ts?: number): string => {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
+const formatDiagnosticTime = (value?: string | null) => {
+  if (!value) return "—";
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? formatTime(time / 1000) : "—";
+};
+
 const getConf = async () => {
   try {
     loading.value = true;
 
     const response = await getRpcConfAPI();
-    const rpc = response.data?.rpc || {};
+    if (!response?.data?.rpc) throw new Error("Missing RPC configuration");
+    const rpc = response.data.rpc;
     const stats = response.data?.stats || {};
 
     networks.forEach(network => {
       formData[network.key] = rpc[network.key] || "";
     });
-    formData.rpc_endpoint_tron_grid_api_key = rpc.rpc_endpoint_tron_grid_api_key || "";
+    Object.entries(optionalDefaults).forEach(([key, fallback]) => {
+      formData[key] = rpc[key] ?? fallback;
+    });
     originalData.value = { ...formData };
     statsData.value = stats;
+    diagnosticsData.value = response.data.diagnostics || {};
+    statsRefreshFailed.value = false;
+    configLoaded.value = true;
   } catch (error) {
     Message.error("获取配置失败");
     console.error("获取配置失败:", error);
@@ -355,11 +536,17 @@ const getConf = async () => {
 const handleRefreshStats = async () => {
   try {
     const response = await getRpcConfAPI();
+    if (!response?.data) throw new Error("Missing RPC statistics");
     statsData.value = response.data?.stats || {};
-  } catch {}
+    diagnosticsData.value = response.data?.diagnostics || {};
+    statsRefreshFailed.value = false;
+  } catch {
+    statsRefreshFailed.value = true;
+  }
 };
 
 const handleSave = async () => {
+  if (!configLoaded.value) return;
   try {
     const errors = await formRef.value?.validate();
     if (errors) {
@@ -375,22 +562,13 @@ const handleSave = async () => {
   try {
     saveLoading.value = true;
 
-    const saveData: Array<{ key: string; value: string }> = [];
-
-    networks.forEach(network => {
-      const value = formData[network.key]?.trim();
-      if (value) {
-        saveData.push({ key: network.key, value });
-      }
-    });
-
-    if (saveData.length < networks.length) {
-      Message.error("所有RPC节点都必须填写");
+    const saveData = [...networks.map(network => network.key), ...Object.keys(optionalDefaults)]
+      .filter(key => formData[key] !== originalData.value[key])
+      .map(key => ({ key, value: formData[key]?.trim() || "" }));
+    if (saveData.length === 0) {
+      Message.info("配置未更改");
       return;
     }
-
-    const tronApiKey = formData.rpc_endpoint_tron_grid_api_key?.trim() || "";
-    saveData.push({ key: "rpc_endpoint_tron_grid_api_key", value: tronApiKey });
 
     await setsConfAPI(saveData);
     Message.success("配置保存成功");
@@ -420,8 +598,66 @@ onUnmounted(() => {
 </script>
 
 <style lang="scss" scoped>
+.rpc-diagnostics {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid $color-border-2;
+}
+.diagnostics-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.diagnostics-stale {
+  color: $color-danger;
+}
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 12px 0 0;
+  font-size: 12px;
+  dt {
+    color: $color-text-3;
+    margin-bottom: 4px;
+  }
+  dd {
+    margin: 0;
+    color: $color-text-1;
+    overflow-wrap: anywhere;
+  }
+  .diagnostic-error {
+    grid-column: 1 / -1;
+  }
+  .diagnostic-error-time {
+    color: $color-text-3;
+    margin-left: 8px;
+  }
+  @media (max-width: 680px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @media (max-width: 420px) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.rpc-extra-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  padding-inline: 8px;
+  border-top: 1px solid $color-border-2;
+  .section-header {
+    margin-bottom: 10px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
 .full-height {
   min-height: 100%;
+  display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .title-doc-link {
@@ -712,6 +948,25 @@ onUnmounted(() => {
   :deep(.arco-card-body) {
     padding: 16px;
   }
+
+  @media (max-width: 680px) {
+    :deep(.arco-card-header) {
+      height: auto;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    :deep(.arco-card-header-title) {
+      white-space: normal;
+    }
+    :deep(.arco-card-header-extra) {
+      align-self: flex-end;
+      margin-left: 0;
+    }
+    .card-title {
+      flex-wrap: wrap;
+    }
+  }
 }
 
 .card-title {
@@ -993,8 +1248,13 @@ onUnmounted(() => {
   }
 
   @keyframes recommend-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--warning-6), 0); }
-    50% { box-shadow: 0 0 0 3px rgba(var(--warning-6), 0.15); }
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(var(--warning-6), 0);
+    }
+    50% {
+      box-shadow: 0 0 0 3px rgba(var(--warning-6), 0.15);
+    }
   }
 }
 

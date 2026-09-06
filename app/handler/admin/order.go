@@ -206,24 +206,17 @@ func (Order) Paid(ctx *gin.Context) {
 
 		return
 	}
-
-	confirmedAt := time.Now()
-	var update = map[string]interface{}{
-		"ref_hash":     req.RefHash,
-		"status":       model.OrderStatusSuccess,
-		"confirmed_at": model.Datetime(confirmedAt),
+	if order.Status == model.OrderStatusSuccess {
+		base.Ok(ctx, "订单已支付，无需重复补单")
+		return
 	}
 
-	err := model.Db.Model(&order).Updates(update).Error
-	if err != nil {
+	confirmedAt := time.Now()
+	if err := order.MarkPaid(req.RefHash, confirmedAt); err != nil {
 		base.Error(ctx, err)
 
 		return
 	}
-
-	order.RefHash = req.RefHash
-	order.Status = model.OrderStatusSuccess
-	order.ConfirmedAt = &confirmedAt
 
 	go notify.Handle(order)
 
@@ -252,7 +245,7 @@ func (Order) ManualNotify(ctx *gin.Context) {
 		return
 	}
 
-	if err := notify.Handle(order); err != nil {
+	if err := notify.HandleManual(order); err != nil {
 		base.BadRequest(ctx, err.Error())
 
 		return

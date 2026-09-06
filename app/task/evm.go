@@ -57,6 +57,10 @@ type evmBlock struct {
 }
 
 func (e *evm) syncBlocksForward(ctx context.Context) {
+	if e.Network == conf.Bsc {
+		e.syncDurableHead(ctx)
+		return
+	}
 	if syncBreak(e.Network, e.blockScanQueue.Len()) {
 
 		return
@@ -127,6 +131,10 @@ func (e *evm) syncBlocksForward(ctx context.Context) {
 }
 
 func (e *evm) lookbackBlocks(ctx context.Context) {
+	if e.Network == conf.Bsc {
+		e.discoverScanOrders(ctx)
+		return
+	}
 	if syncBreak(e.Network, e.blockScanQueue.Len()) {
 		return
 	}
@@ -161,6 +169,10 @@ func (e *evm) lookbackBlocks(ctx context.Context) {
 }
 
 func (e *evm) blockDispatch(ctx context.Context) {
+	if e.Network == conf.Bsc {
+		e.dispatchDurableScans(ctx)
+		return
+	}
 	p, err := ants.NewPoolWithFunc(3, e.getBlockByNumber)
 	if err != nil {
 		log.Task.Warn("Error creating pool:", err)
@@ -381,6 +393,10 @@ func (e *evm) parseEventTransfer(b evmBlock, timestamp map[string]time.Time) ([]
 }
 
 func (e *evm) tradeConfirmHandle(ctx context.Context) {
+	if e.Network == conf.Bsc {
+		e.confirmDurableOrders(ctx)
+		return
+	}
 	var orders = getConfirmingOrders(model.GetNetworkTrades(model.Network(e.Network)))
 	var wg sync.WaitGroup
 

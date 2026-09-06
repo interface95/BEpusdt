@@ -18,6 +18,8 @@ export interface Detail {
   notify_url: string;
   notify_num: number;
   notify_state: number;
+  notify_error?: string;
+  confirmation_error?: string;
   ref_hash: string;
   ref_block_num: number;
   expired_at: string;

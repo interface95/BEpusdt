@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/v03413/bepusdt/app/log"
@@ -17,7 +18,7 @@ func init() {
 }
 
 // notifyRetry 回调失败重试
-func notifyRetry(context.Context) {
+func notifyRetry(ctx context.Context) {
 	tradeOrders, err := model.GetNotifyFailedTradeOrders()
 	if err != nil {
 		log.Task.Error("待回调订单获取失败", err)
@@ -26,9 +27,16 @@ func notifyRetry(context.Context) {
 	}
 
 	for _, order := range tradeOrders {
+		if ctx.Err() != nil {
+			return
+		}
+		if order.ConfirmedAt == nil {
+			log.Task.Warnf("订单 %s 缺少确认时间，无法安排回调重试", order.TradeId)
+			continue
+		}
 		next := utils.CalcNextNotifyTime(*order.ConfirmedAt, order.NotifyNum)
 		if time.Now().Unix() >= next.Unix() {
-			go notify.Handle(order)
+			go deliverOrderNotification(order)
 		}
 	}
 }
@@ -41,6 +49,12 @@ func notifyRoll(context.Context) {
 
 // notifyOrderSuccess 统一触发订单成功后的回调与订单通知。
 func notifyOrderSuccess(order model.Order) {
-	go notify.Handle(order)
+	go deliverOrderNotification(order)
 	go notifier.Success(order)
+}
+
+func deliverOrderNotification(order model.Order) {
+	if err := notify.Handle(order); err != nil && !errors.Is(err, notify.ErrNotifyInProgress) {
+		log.Task.Warnf("订单 %s 回调未完成: %v", order.TradeId, err)
+	}
 }

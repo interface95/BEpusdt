@@ -55,8 +55,11 @@ const (
 	PaymentLookbackHour ConfKey = "payment_lookback_hour" // 订单回溯时间
 	PaymentNetworkSort  ConfKey = "payment_network_sort"  // 收银台网络顺序，逗号分隔
 
-	RpcEndpointPlasma         ConfKey = "rpc_endpoint_plasma"            // Plasma RPC节点
-	RpcEndpointBsc            ConfKey = "rpc_endpoint_bsc"               // BSC RPC节点
+	RpcEndpointPlasma         ConfKey = "rpc_endpoint_plasma" // Plasma RPC节点
+	RpcEndpointBsc            ConfKey = "rpc_endpoint_bsc"    // BSC RPC节点
+	RpcEndpointBscRead        ConfKey = "rpc_endpoint_bsc_read"
+	RpcEndpointBscReadBackups ConfKey = "rpc_endpoint_bsc_read_backups"
+	RpcEndpointBscLogBackups  ConfKey = "rpc_endpoint_bsc_log_backups"
 	RpcEndpointSolana         ConfKey = "rpc_endpoint_solana"            // Solana RPC节点
 	RpcEndpointXlayer         ConfKey = "rpc_endpoint_xlayer"            // Xlayer RPC节点
 	RpcEndpointPolygon        ConfKey = "rpc_endpoint_polygon"           // Polygon RPC节点
@@ -73,9 +76,10 @@ const (
 	RateSyncInterval        ConfKey = "rate_sync_interval"          // 汇率同步间隔，单位秒
 	RateSyncHistoryDays     ConfKey = "rate_sync_history_days"      // 历史汇率保存天数
 
-	NotifyMaxRetry     ConfKey = "notify_max_retry"      // 最大重试次数，订单回调失败
-	BlockHeightMaxDiff ConfKey = "block_height_max_diff" // 区块高度最大差值，超过此值则以当前区块高度为准，重新开始扫描
-	BlockOffsetConfirm ConfKey = "block_offset_confirm"  // 区块偏移确认数，扫描时以当前区块高度减去此偏移量为准，避免重链导致的订单回调失败
+	NotifyMaxRetry            ConfKey = "notify_max_retry" // 最大重试次数，订单回调失败
+	NotifyWaitingDisabledURLs ConfKey = "notify_waiting_disabled_urls"
+	BlockHeightMaxDiff        ConfKey = "block_height_max_diff" // 区块高度最大差值，超过此值则以当前区块高度为准，重新开始扫描
+	BlockOffsetConfirm        ConfKey = "block_offset_confirm"  // 区块偏移确认数，扫描时以当前区块高度减去此偏移量为准，避免重链导致的订单回调失败
 
 	MqttHost        ConfKey = "mqtt_host"
 	MqttPort        ConfKey = "mqtt_port"

@@ -12,10 +12,13 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/spf13/cast"
 	"github.com/v03413/bepusdt/app/conf"
-	"github.com/v03413/bepusdt/app/core"
 	"github.com/v03413/bepusdt/app/log"
 	"github.com/v03413/bepusdt/app/utils"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var ErrOrderStateChanged = errors.New("order state changed")
 
 const (
 	OrderNotifyStateSucc = 1 // 回调成功
@@ -83,8 +86,15 @@ type Order struct {
 	NotifyUrl         string     `gorm:"column:notify_url;type:varchar(255);not null;default:'';comment:异步地址" json:"notify_url"`
 	NotifyNum         int        `gorm:"column:notify_num;not null;default:0;index:idx_order_notify_retry,priority:3;comment:回调次数" json:"notify_num"`
 	NotifyState       int        `gorm:"column:notify_state;not null;default:0;index:idx_order_notify_retry,priority:2;comment:回调状态 1：成功 0：失败" json:"notify_state"`
+	NotifyLeaseToken  string     `gorm:"column:notify_lease_token;type:varchar(64);not null;default:''" json:"-"`
+	NotifyLeaseUntil  int64      `gorm:"column:notify_lease_until;not null;default:0" json:"-"`
+	NotifyError       string     `gorm:"column:notify_error;size:512;not null;default:''" json:"notify_error"`
 	RefHash           string     `gorm:"column:ref_hash;type:varchar(128);not null;default:'';index;comment:交易哈希" json:"ref_hash"`
 	RefBlockNum       int        `gorm:"column:ref_block_num;not null;default:0;comment:区块索引" json:"ref_block_num"`
+	RefEventIndex     string     `gorm:"column:ref_event_index;type:varchar(32);not null;default:''" json:"ref_event_index"`
+	RefBlockHash      string     `gorm:"column:ref_block_hash;type:varchar(128);not null;default:''" json:"ref_block_hash"`
+	RefAmount         string     `gorm:"column:ref_amount;type:varchar(96);not null;default:''" json:"ref_amount"`
+	ConfirmationError string     `gorm:"column:confirmation_error;size:512;not null;default:''" json:"confirmation_error"`
 	ExpiredAt         time.Time  `gorm:"column:expired_at;not null;comment:失效时间" json:"expired_at"`
 	ConfirmedAt       *time.Time `gorm:"column:confirmed_at;not null;comment:交易确认时间" json:"confirmed_at"`
 	ClientFingerprint string     `gorm:"column:client_fingerprint;type:varchar(64);not null;default:'';comment:'客户端指纹'" json:"-"`
@@ -104,10 +114,7 @@ type MethodItem struct {
 }
 
 func (o *Order) SetCanceled() error {
-	core.New()
-	o.Status = OrderStatusCanceled
-
-	return Db.Save(o).Error
+	return o.setState(OrderStatusWaiting, OrderStatusCanceled)
 }
 
 // CanReselectPayment 判断订单是否支持重选交易类型
@@ -131,44 +138,133 @@ func (o *Order) MatchFingerprint(fingerprint string) bool {
 	return !o.FingerprintBound() || o.ClientFingerprint == fingerprint
 }
 
-func (o *Order) SetExpired() {
-	o.Status = OrderStatusExpired
-
-	Db.Save(o)
+func (o *Order) SetExpired() error {
+	return o.setState(OrderStatusWaiting, OrderStatusExpired)
 }
 
-func (o *Order) SetSuccess() {
-	o.Status = OrderStatusSuccess
-
-	Db.Save(o)
+func (o *Order) SetSuccess() error {
+	return o.setState(OrderStatusConfirming, OrderStatusSuccess)
 }
 
-func (o *Order) SetFailed() {
-	o.Status = OrderStatusFailed
+func (o *Order) SetFailed() error {
+	return o.setState(OrderStatusConfirming, OrderStatusFailed)
+}
 
-	Db.Save(o)
+func (o *Order) setState(expected, next int) error {
+	if o.ID == 0 || o.Status != expected {
+		return ErrOrderStateChanged
+	}
+	result := Db.Model(&Order{}).
+		Where("id = ? AND status = ? AND ref_hash = ?", o.ID, expected, o.RefHash).
+		Update("status", next)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrOrderStateChanged
+	}
+	o.Status = next
+	return nil
 }
 
 func (o *Order) MarkConfirming(blockNum int, from, hash string, at time.Time, amount decimal.Decimal) error {
+	return o.MarkConfirmingTx(Db, blockNum, from, hash, at, amount)
+}
+
+// MarkConfirmingTx lets the scanner claim the order and its event in one transaction.
+// After a transaction rollback, callers must discard this in-memory snapshot.
+func (o *Order) MarkConfirmingTx(tx *gorm.DB, blockNum int, from, hash string, at time.Time, amount decimal.Decimal) error {
+	if o.ID == 0 || (o.Status != OrderStatusWaiting && o.Status != OrderStatusExpired) {
+		return ErrOrderStateChanged
+	}
+	updates := map[string]any{
+		"from_address": from, "confirmed_at": at, "ref_hash": hash,
+		"ref_block_num": blockNum, "ref_amount": amount.String(), "status": OrderStatusConfirming,
+	}
+	if o.AddressLocked {
+		rate, err := decimal.NewFromString(o.Rate)
+		if err != nil {
+			return fmt.Errorf("invalid order rate: %w", err)
+		}
+		updates["amount"] = amount.String()
+		updates["money"] = rate.Mul(amount).String()
+	}
+	result := tx.Model(&Order{}).
+		Where("id = ? AND status IN ?", o.ID, []int{OrderStatusWaiting, OrderStatusExpired}).
+		Where("trade_type = ? AND address = ? AND match_address = ? AND address_locked = ?", o.TradeType, o.Address, o.MatchAddress, o.AddressLocked).
+		Where("amount = ? AND rate = ? AND expired_at = ? AND ref_hash = ?", o.Amount, o.Rate, o.ExpiredAt, o.RefHash).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrOrderStateChanged
+	}
 	o.FromAddress = from
 	o.ConfirmedAt = &at
 	o.RefHash = hash
 	o.RefBlockNum = blockNum
+	o.RefAmount = amount.String()
 	o.Status = OrderStatusConfirming
 	if o.AddressLocked {
-		rate, _ := decimal.NewFromString(o.Rate)
-		o.Amount = amount.String()
-		o.Money = rate.Mul(amount).String()
+		o.Amount = updates["amount"].(string)
+		o.Money = updates["money"].(string)
 	}
 
-	return Db.Save(o).Error
+	return nil
+}
+
+// MarkPaid is the explicit administrator override. Chain confirmation must use SetSuccess.
+func (o *Order) MarkPaid(hash string, at time.Time) error {
+	if o.ID == 0 || (o.Status != OrderStatusWaiting && o.Status != OrderStatusExpired && o.Status != OrderStatusConfirming && o.Status != OrderStatusFailed) {
+		return ErrOrderStateChanged
+	}
+	updates := map[string]any{"status": OrderStatusSuccess, "ref_hash": hash, "confirmed_at": at, "confirmation_error": ""}
+	if hash != o.RefHash {
+		// A manual reference cannot retain evidence belonging to a different transfer.
+		updates["ref_block_num"], updates["ref_block_hash"], updates["ref_event_index"], updates["ref_amount"] = 0, "", "", ""
+	}
+	result := Db.Model(&Order{}).Where("id = ? AND status = ? AND ref_hash = ?", o.ID, o.Status, o.RefHash).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrOrderStateChanged
+	}
+	if hash != o.RefHash {
+		o.RefBlockNum, o.RefBlockHash, o.RefEventIndex, o.RefAmount = 0, "", "", ""
+	}
+	o.Status, o.RefHash, o.ConfirmedAt, o.ConfirmationError = OrderStatusSuccess, hash, &at, ""
+	return nil
 }
 
 func (o *Order) SetNotifyState(state int) error {
-	o.NotifyNum += 1
-	o.NotifyState = state
-
-	return Db.Save(o).Error
+	if state != OrderNotifyStateFail && state != OrderNotifyStateSucc {
+		return errors.New("invalid order notification state")
+	}
+	if o.ID == 0 {
+		return ErrOrderStateChanged
+	}
+	updates := map[string]any{
+		"notify_num":   gorm.Expr("notify_num + 1"),
+		"notify_state": gorm.Expr("CASE WHEN notify_state = ? THEN ? ELSE ? END", OrderNotifyStateSucc, OrderNotifyStateSucc, state),
+	}
+	if state == OrderNotifyStateSucc {
+		updates["notify_error"] = ""
+	}
+	var current Order
+	result := Db.Model(&current).
+		Where("id = ? AND status = ? AND ref_hash = ?", o.ID, OrderStatusSuccess, o.RefHash).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "notify_num"}, {Name: "notify_state"}, {Name: "notify_error"}}}).
+		UpdateColumns(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrOrderStateChanged
+	}
+	o.NotifyNum, o.NotifyState, o.NotifyError = current.NotifyNum, current.NotifyState, current.NotifyError
+	return nil
 }
 
 func (o *Order) GetStatusLabel() string {

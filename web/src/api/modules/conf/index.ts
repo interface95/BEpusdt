@@ -1,5 +1,28 @@
 import axios from "@/api";
 
+export interface RpcStat {
+  block: string;
+  succ: string;
+  time: number;
+}
+
+export interface RpcDiagnostic {
+  available: boolean;
+  backlog_jobs: number;
+  next_retry: string | null;
+  last_error: string;
+  last_error_at: string | null;
+  completed_live_height: number | null;
+  oldest_confirming: string | null;
+  idle: boolean | null;
+}
+
+export interface RpcConfiguration {
+  rpc: Record<string, string>;
+  stats: Record<string, RpcStat>;
+  diagnostics?: Record<string, RpcDiagnostic>;
+}
+
 const setConfAPI = (data: any) => {
   return axios({
     url: "/api/conf/set",
@@ -56,7 +79,7 @@ const resetApiAuthToken = (data: any) => {
   });
 };
 
-const getRpcConfAPI = () => {
+const getRpcConfAPI = (): Promise<{ code: number; data: RpcConfiguration }> => {
   return axios({
     url: "/api/conf/rpc",
     method: "get"
