@@ -24,7 +24,7 @@
             if (typeof i18next === 'undefined') return resolve();
             i18next.init({ lng: lang, debug: false, resources: {} }, function (err) {
                 if (err) return resolve();
-                fetch('/checkout/official/assets/locales/' + lang + '.json')
+                fetch('/checkout/official/assets/locales/' + lang + '.json?v=20260907-2')
                     .then(function (r) { return r.json(); })
                     .then(function (d) {
                         i18next.addResourceBundle(lang, 'translation', d);
@@ -55,7 +55,10 @@
                 if (!m) return;
                 var v = i18next.t(m[2]);
                 if (m[1] === 'html') el.innerHTML = v;
-                else el.setAttribute(m[1], v);
+                else {
+                    el.setAttribute(m[1], v);
+                    if (m[1] === 'title' && el.hasAttribute('aria-label')) el.setAttribute('aria-label', v);
+                }
                 return;
             }
             var tr = i18next.t(k);
@@ -66,13 +69,14 @@
             document.title = i18next.t('pageTitle');
             document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
         } catch (e) {}
+        if (selMethod) updateAmount();
     }
 
     function switchLang(l) {
         if (l !== 'zh' && l !== 'en') { console.warn('Use "zh" or "en"'); return; }
         if (typeof i18next === 'undefined') return;
         lang = l;
-        fetch('/checkout/official/assets/locales/' + l + '.json')
+        fetch('/checkout/official/assets/locales/' + l + '.json?v=20260907-2')
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 i18next.addResourceBundle(l, 'translation', d, true, true);
@@ -140,7 +144,7 @@
 
         function render(filter) {
             list.innerHTML = '';
-            var arr = filter ? items.filter(function (it) { return it.label.toLowerCase().indexOf(filter.toLowerCase()) !== -1; }) : items;
+            var arr = filter ? items.filter(function (it) { return (it.label + ' ' + (it.searchAliases || '')).toLowerCase().indexOf(filter.toLowerCase()) !== -1; }) : items;
             arr.forEach(function (it) {
                 var el = document.createElement('div');
                 el.className = 'dropdown-item';
@@ -163,7 +167,7 @@
                     img.alt = it.label;
                     img.addEventListener('error', function () { img.style.visibility = 'hidden'; });
                     trigger.insertBefore(img, trigger.firstChild);
-                    if (txt) { txt.textContent = it.label; txt.classList.remove('placeholder'); }
+                    if (txt) { txt.textContent = it.label; txt.classList.remove('placeholder'); txt.removeAttribute('data-i18n'); }
                     dd.classList.remove('open');
                     trigger.classList.remove('open');
                     if (onSelect) onSelect(it.value, it);
@@ -201,13 +205,22 @@
         var img = trigger.querySelector('.select-img');
         if (img) img.remove();
         var txt = trigger.querySelector('.select-text');
-        if (txt) { txt.textContent = ph; txt.classList.add('placeholder'); }
+        if (txt) { txt.textContent = ph; txt.classList.add('placeholder'); txt.dataset.i18n = id === 'networkSelect' ? 'selectNetwork' : 'selectCurrency'; }
         var list = w.querySelector('.dropdown-list');
         if (list) list.querySelectorAll('.dropdown-item').forEach(function (d) { d.classList.remove('selected'); });
     }
 
     function tokenIcon(c) { return WEB3 + '/token/' + (c || '').toUpperCase() + '.svg'; }
     function netIcon(n) { return WEB3 + '/network/' + (n || '').toLowerCase() + '.svg'; }
+    function paymentNetworkName(network, name, currency) {
+        switch (network) {
+            case 'tron': return currency === 'TRX' ? 'TRON' : 'TRON (TRC20)';
+            case 'ethereum': return currency === 'ETH' ? 'Ethereum' : 'Ethereum (ERC20)';
+            case 'bsc': return currency === 'BNB' ? 'BNB Smart Chain' : 'BNB Smart Chain (BEP20)';
+            case 'solana': return 'Solana (SOL)';
+            default: return name || network || '--';
+        }
+    }
 
     function sortMethodsByNetwork(list, networkSort) {
         if (!Array.isArray(list) || typeof networkSort !== 'string' || !networkSort.trim()) return list;
@@ -282,7 +295,8 @@
         buildDropdown('networkSelect', arr.map(function (m) {
             return {
                 value: m.token_net_name,
-                label: m.token_net_name.toUpperCase(),
+                label: paymentNetworkName(m.network, m.token_net_name, m.currency),
+                searchAliases: m.network + ' ' + m.token_net_name,
                 iconSrc: cached(netIcon(m.network)),
                 badge: m.is_popular ? t('hotBadge', '热门') : '',
                 fullData: m
@@ -300,13 +314,21 @@
         var lineEl = document.getElementById('networkTagSep');
         var rowEl = aEl ? aEl.closest('.amount-crypto-row') : null;
         if (!aEl) return;
+        var amount = selMethod ? String(selMethod.actual_amount) : '';
+        document.getElementById('selectionFiatPreview').hidden = !!selMethod;
+        document.getElementById('selectionFiatCaption').hidden = !selMethod;
+        var label = document.getElementById('selectionAmountLabel');
+        label.dataset.i18n = selMethod ? 'estimatedReceiptLabel' : 'selectionOrderAmount';
+        label.textContent = t(label.dataset.i18n, selMethod ? '预计应到账金额' : '订单金额');
+        document.getElementById('payAmountValueS').textContent = amount || '--';
+        document.getElementById('payCurrencyS').textContent = selMethod ? selMethod.currency : '';
+        aEl.classList.toggle('amount-long', amount.length > 12 && amount.length <= 20);
+        aEl.classList.toggle('amount-very-long', amount.length > 20);
         if (selMethod) {
-            aEl.textContent = selMethod.actual_amount + ' ' + selMethod.currency;
-            if (nEl) nEl.textContent = t('networkPrefix', '区块网络 · ') + selMethod.token_net_name;
+            if (nEl) nEl.textContent = t('networkPrefix', '区块网络 · ') + paymentNetworkName(selMethod.network, selMethod.token_net_name, selMethod.currency);
             if (lineEl) lineEl.style.display = 'flex';
             if (rowEl) rowEl.style.display = '';
         } else {
-            aEl.textContent = '--';
             if (nEl) nEl.textContent = '';
             if (lineEl) lineEl.style.display = 'none';
             if (rowEl) rowEl.style.display = 'none';
@@ -342,6 +364,8 @@
                     showSuccess(d);
                 } else if (d.status === 4) {
                     showCanceled(d);
+                } else if (d.status === 3) {
+                    showTimeout();
                 }
             })
             .catch(function (e) { console.error(e); });
@@ -377,7 +401,7 @@
             var hh = Math.floor(rem / 3600);
             var mm = Math.floor((rem % 3600) / 60);
             var ss = rem % 60;
-            if (timerEl) timerEl.textContent = ('0' + hh).slice(-2) + ':' + ('0' + mm).slice(-2) + ':' + ('0' + ss).slice(-2);
+            if (timerEl) timerEl.textContent = (hh ? ('0' + hh).slice(-2) + ':' : '') + ('0' + mm).slice(-2) + ':' + ('0' + ss).slice(-2);
             var pct = rem / total;
             if (bar) {
                 bar.style.strokeDashoffset = (1 - pct) * 100;
@@ -397,7 +421,17 @@
         cdTimer = setInterval(tick, 1000);
     }
 
+    function hideTimeout() {
+        var modal = document.getElementById('timeoutModal');
+        if (modal) modal.remove();
+    }
+
     function showConfirming() {
+        if (cdTimer) {
+            clearInterval(cdTimer);
+            cdTimer = null;
+        }
+        hideTimeout();
         var m = document.getElementById('confirmingModal');
         if (m && m.style.display === 'none') m.style.display = 'flex';
     }
@@ -407,6 +441,7 @@
     }
 
     function showSuccess(data) {
+        hideTimeout();
         var modal = document.getElementById('successModal');
         if (!modal) return;
         modal.style.display = 'flex';
@@ -432,6 +467,7 @@
 
     function showCanceled(data) {
         stopTimers();
+        hideTimeout();
         hideConfirming();
         hideCheckoutStages();
         var modal = document.getElementById('canceledModal');
@@ -504,6 +540,12 @@
         init: function (config) {
             cfg = config || {};
             tradeId = cfg.trade_id;
+            selCur = '';
+            selMethod = null;
+            resetTrigger('currencySelect', t('selectCurrency', '选择货币'));
+            resetTrigger('networkSelect', t('selectNetwork', '选择网络'));
+            updateAmount();
+            updatePayBtn();
             document.addEventListener('click', function () {
                 document.querySelectorAll('.select-dropdown').forEach(function (d) { d.classList.remove('open'); });
                 document.querySelectorAll('.select-trigger').forEach(function (x) { x.classList.remove('open'); });
@@ -517,9 +559,12 @@
             }
             var caBtn = document.getElementById('copyAmountBtn');
             var caIcon = document.getElementById('copyAmountIcon');
-            if (caBtn) caBtn.addEventListener('click', function () {
-                if (selMethod) copyText(selMethod.actual_amount, t('toastAmountCopied', '金额已复制'), caIcon, false);
-            });
+            if (caBtn && !caBtn.dataset.bound) {
+                caBtn.dataset.bound = '1';
+                caBtn.addEventListener('click', function () {
+                    if (selMethod) copyText(selMethod.actual_amount, t('toastAmountCopied', '金额已复制'), caIcon, false);
+                });
+            }
             fetch('/api/v1/pay/methods', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -546,19 +591,26 @@
             startStatusCheck();
             var caBtn = document.getElementById('copyAmountQBtn');
             var caIcon = document.getElementById('copyAmountQIcon');
-            if (caBtn) caBtn.addEventListener('click', function () {
-                if (window._qrAmount) copyText(window._qrAmount, t('toastAmountCopied', '金额已复制'), caIcon, false);
-            });
+            if (caBtn && !caBtn.dataset.bound) {
+                caBtn.dataset.bound = '1';
+                caBtn.addEventListener('click', function () {
+                    if (window._qrAmount) copyText(window._qrAmount, t('toastAmountCopied', '金额已复制'), caIcon, false);
+                });
+            }
             var adBtn = document.getElementById('copyAddressBtn');
             var adIcon = document.getElementById('copyAddressIcon');
-            if (adBtn) adBtn.addEventListener('click', function () {
-                var el = document.getElementById('walletAddress');
-                if (el && el.textContent !== '--') copyText(el.textContent, t('toastAddressCopied', '地址已复制'), adIcon, true);
-            });
+            if (adBtn && !adBtn.dataset.bound) {
+                adBtn.dataset.bound = '1';
+                adBtn.addEventListener('click', function () {
+                    var el = document.getElementById('walletAddress');
+                    if (el && el.textContent !== '--') copyText(el.textContent, t('toastAddressCopied', '地址已复制'), adIcon, false);
+                });
+            }
         },
         initI18n: initI18n,
         applyI18n: applyI18n,
         t: t,
+        networkName: paymentNetworkName,
         showCanceled: showCanceled,
         switchLang: switchLang
     };
@@ -589,52 +641,25 @@
             el.appendChild(part);
         }
 
-        if (address.length <= 10) {
+        if (address.length <= 12) {
             appendPart(address, true);
             return;
         }
 
-        appendPart(address.slice(0, 4), true);
-        appendPart(address.slice(4, -6), false);
+        appendPart(address.slice(0, 6), true);
+        appendPart(address.slice(6, -6), false);
         appendPart(address.slice(-6), true);
     }
 
-    function updateQrPaymentLogo(currencyValue, networkValue) {
-        var badge = document.getElementById('qrPaymentLogo');
-        var tokenLogo = document.getElementById('qrTokenLogo');
-        var networkLogo = document.getElementById('qrNetworkLogo');
-        if (!badge || !tokenLogo || !networkLogo) return;
-
-        var currency = currencyValue == null ? '' : String(currencyValue).trim().toUpperCase();
-        var network = networkValue == null ? '' : String(networkValue).trim().toLowerCase();
-        badge.style.display = 'none';
-        tokenLogo.removeAttribute('src');
-        networkLogo.style.display = 'none';
-        networkLogo.removeAttribute('src');
-        tokenLogo.onload = null;
-        tokenLogo.onerror = null;
-        networkLogo.onload = null;
-        networkLogo.onerror = null;
-        if (!currency) return;
-
-        tokenLogo.onerror = function () {
-            badge.style.display = 'none';
-            tokenLogo.removeAttribute('src');
-        };
-        tokenLogo.onload = function () {
-            badge.style.display = 'flex';
-        };
-        tokenLogo.src = WEB3 + '/token/' + currency + '.svg';
-
-        if (!network) return;
-        networkLogo.onerror = function () {
-            networkLogo.style.display = 'none';
-            networkLogo.removeAttribute('src');
-        };
-        networkLogo.onload = function () {
-            networkLogo.style.display = 'block';
-        };
-        networkLogo.src = WEB3 + '/network/' + network + '.svg';
+    function updatePaymentIcon(id, kind, name) {
+        var icon = document.getElementById(id);
+        if (!icon) return;
+        icon.hidden = true;
+        icon.removeAttribute('src');
+        if (!/^[a-zA-Z0-9-]+$/.test(name)) return;
+        icon.onload = function () { icon.hidden = false; };
+        icon.onerror = function () { icon.hidden = true; };
+        icon.src = WEB3 + '/' + kind + '/' + name + '.svg';
     }
 
     function showSelection() {
@@ -643,6 +668,8 @@
         var d = orderData;
         document.getElementById('orderMoneyS').textContent = d.money || '--';
         document.getElementById('orderFiatS').textContent = d.fiat || '';
+        document.getElementById('orderMoneyCaptionS').textContent = d.money || '--';
+        document.getElementById('orderFiatCaptionS').textContent = d.fiat || '';
         document.getElementById('orderIdS').textContent = d.order_id || '--';
         bindHelp('helpBtnS', d.support_url);
         Payment.init({
@@ -670,22 +697,40 @@
         document.getElementById('selectionStage').style.display = 'none';
         document.getElementById('paymentStage').style.display = 'block';
         var d = orderData;
-        var currency = (d.network && d.network.crypto) ? d.network.crypto : (d.selected_payment ? d.selected_payment.currency : 'USDT');
+        var currency = String((d.network && d.network.crypto) || (d.selected_payment && d.selected_payment.currency) || d.crypto || '--');
         var netName = (d.network && d.network.name) ? d.network.name : (d.selected_payment ? d.selected_payment.token_net_name : '');
         var network = (d.network && d.network.network) ? d.network.network : (d.selected_payment ? d.selected_payment.network : '');
-        var amount = d.actual_amount || '--';
+        var amount = d.actual_amount == null ? '--' : String(d.actual_amount);
         window._qrAmount = amount;
         document.getElementById('orderMoneyQ').textContent = d.money || '--';
         document.getElementById('orderFiatQ').textContent = d.fiat || '';
-        document.getElementById('payAmountQ').textContent = amount + ' ' + currency;
-        document.getElementById('payNetworkQ').textContent = _t('networkPrefix', '区块网络 · ') + netName;
+        document.getElementById('payAmountValueQ').textContent = amount;
+        document.getElementById('payCurrencyQ').textContent = currency;
+        document.getElementById('payAmountQ').classList.toggle('amount-long', amount.length > 12 && amount.length <= 20);
+        document.getElementById('payAmountQ').classList.toggle('amount-very-long', amount.length > 20);
+        document.getElementById('expectedAmountQ').textContent = amount + ' ' + currency;
+        document.getElementById('paymentCurrencyQ').textContent = currency;
+        document.getElementById('networkCurrencyQ').textContent = currency;
+        var networkLabel = Payment.networkName(network, netName, currency);
+        var networkElement = document.getElementById('payNetworkQ');
+        networkElement.textContent = networkLabel;
+        var protocolMatch = networkLabel.match(/^(.*?)( \([^)]+\))$/);
+        if (protocolMatch) {
+            networkElement.textContent = protocolMatch[1];
+            var protocol = document.createElement('span');
+            protocol.className = 'payment-protocol';
+            protocol.textContent = protocolMatch[2];
+            networkElement.appendChild(protocol);
+        }
+        document.getElementById('addressNetworkQ').textContent = protocolMatch ? protocolMatch[1] : networkLabel;
         document.getElementById('orderIdQ').textContent = d.order_id || '--';
         var paymentAddress = d.token || d.address || '';
         renderWalletAddress(paymentAddress);
         var addr = document.getElementById('addressLabelQ');
-        if (addr) addr.textContent = _t('receivingAddress', '收款地址');
-        $('#qrcode').empty().qrcode({ text: paymentAddress, width: 200, height: 200 });
-        updateQrPaymentLogo(currency, network);
+        if (addr) addr.textContent = _t('orderReceivingAddress', '本订单收款地址');
+        $('#qrcode').empty().qrcode({ text: paymentAddress, width: 158, height: 158 });
+        updatePaymentIcon('paymentTokenIconQ', 'token', currency);
+        updatePaymentIcon('paymentNetworkIconQ', 'network', network);
         updateReselectButton();
         bindHelp('helpBtnQ', d.support_url);
         Payment.initQrPage({

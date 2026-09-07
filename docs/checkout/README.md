@@ -84,11 +84,15 @@ cd BEpusdt
 
 **2. 按需修改**
 
-- 品牌色 → `static/checkout/official/assets/css/checkout.css` 中的 CSS 变量
+- 通用样式 → `static/checkout/official/assets/css/checkout.css` 中的 CSS 变量
+- 币种/网络选择页及付款详情页的布局与明暗主题 → `static/checkout/official/assets/css/payment.css`
 - Logo / 图标 → 替换 `static/checkout/official/assets/img/` 下的图片并更新引用
 - 页面结构 → 编辑 `static/checkout/official/views/checkout.html`
 - 交互逻辑 → 编辑 `static/checkout/official/assets/js/checkout.js`
 - 多语言文案 → 编辑 `static/checkout/official/assets/locales/zh.json`、`en.json`
+
+金额、网络和地址提醒使用当前订单数据，仅作展示，不计算提现手续费或修改应付金额。
+调整页面后可运行[收银台浏览器回归测试](../../tests/checkout/README.md)，核对复制内容、二维码、网络重选及订单状态变化。
 
 **3. 重新编译**（见[部署与验证](#部署与验证)）
 
