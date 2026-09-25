@@ -9,6 +9,23 @@ BEpusdt 在区块扫描过程中，所有区块数据均通过 RPC 节点获取�
 BEpusdt 默认内置了一批公益 RPC
 节点，详见[源代码配置](https://github.com/v03413/BEpusdt/blob/0e1e22cebbf4a2127786e62b2b8b4d2175054c0b/app/model/conf.go#L140)。
 
+### Ethereum 默认节点与旧版本升级
+
+Ethereum 默认节点为 `https://ethereum-rpc.publicnode.com`。
+Ethereum 的 `eth_getLogs` 请求同时指定已支持的 USDT、USDC 合约地址，满足该节点的地址过滤要求；
+原生 ETH 仍通过完整区块交易解析，其他链的日志查询不受影响。
+旧的 Nodies 公共节点已观察到拒绝 `eth_getBlockByNumber(..., true)`，
+即使区块高度查询正常，也会导致完整交易扫描失败，进而无法识别收款或触发通知。
+
+新版本首次启动时会通过数据库迁移，将 `rpc_endpoint_ethereum` 中原来的
+`https://ethereum-public.nodies.app/`（或不带末尾斜杠的地址）替换为上述节点。
+自定义地址、其他链的配置、订单和余额不修改；迁移只运行一次，不会在以后启动时反复覆盖设置。
+只有部署并启动包含此迁移的版本后，已有数据库配置才会更新，修改源码本身不会改变线上配置。
+
+更换 RPC 后应验证 `eth_chainId` 为 `0x1`、最新及历史完整区块查询、交易收据和批量查询，
+不能仅以 `eth_blockNumber` 成功判断扫链正常。公共节点仍可能限流，需继续观察实际扫描日志。
+此配置迁移不会修改过期订单状态、扩大回扫窗口或执行补单。
+
 ### 公益节点的局限性
 
 - **稳定性难以保证**：公益节点由第三方维护，服务质量无法长期保障

@@ -38,7 +38,7 @@ var defaultConf = map[ConfKey]string{
 	RpcEndpointXlayer:         "https://xlayerrpc.okx.com/",
 	RpcEndpointPolygon:        "https://polygon-public.nodies.app/",
 	RpcEndpointArbitrum:       "https://arb1.arbitrum.io/rpc",
-	RpcEndpointEthereum:       "https://ethereum-public.nodies.app/",
+	RpcEndpointEthereum:       "https://ethereum-rpc.publicnode.com",
 	RpcEndpointBase:           "https://base-public.nodies.app/",
 	RpcEndpointAptos:          "https://aptos-rest.publicnode.com/",
 	RpcEndpointPlasma:         "https://rpc.plasma.to/",

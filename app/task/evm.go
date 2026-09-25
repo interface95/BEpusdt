@@ -3,6 +3,7 @@ package task
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -329,7 +330,19 @@ func (e *evm) parseNativeTransfer(array []gjson.Result, num int, timestamp time.
 
 func (e *evm) parseEventTransfer(b evmBlock, timestamp map[string]time.Time) ([]transfer, error) {
 	transfers := make([]transfer, 0)
-	post := []byte(fmt.Sprintf(`{"jsonrpc":"2.0","method":"eth_getLogs","params":[{"fromBlock":"0x%x","toBlock":"0x%x","topics":["%s"]}],"id":1}`, b.From, b.To, evmTransferEvent))
+	filter := map[string]any{
+		"fromBlock": fmt.Sprintf("0x%x", b.From),
+		"toBlock":   fmt.Sprintf("0x%x", b.To),
+		"topics":    []string{evmTransferEvent},
+	}
+	if e.Network == conf.Ethereum {
+		// PublicNode requires contract-scoped log queries; keep both supported ERC20 tokens.
+		filter["address"] = []string{conf.UsdtErc20, conf.UsdcErc20}
+	}
+	post, err := json.Marshal(evmRequest("eth_getLogs", []any{filter}, 1))
+	if err != nil {
+		return transfers, fmt.Errorf("encode eth_getLogs request: %w", err)
+	}
 	resp, err := e.Client.Post(e.rpcEndpoint(), "application/json", bytes.NewBuffer(post))
 	if err != nil {
 
