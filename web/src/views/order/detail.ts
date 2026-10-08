@@ -4,11 +4,16 @@ import { detailAPI } from "@/api/modules/order";
 export interface Detail {
   id: number;
   order_id: string;
+  user_id?: string;
+  username?: string;
+  display_name?: string;
   trade_id: string;
   trade_type: string;
   rate: string;
   amount: string;
   money: number;
+  crypto: string;
+  fiat: string;
   address: string;
   from_address: string;
   status: number;
@@ -35,11 +40,16 @@ export const useOrderDetail = () => {
   const detailData = ref<Detail>({
     id: 0,
     order_id: "",
+    user_id: "",
+    username: "",
+    display_name: "",
     trade_id: "",
     trade_type: "",
     rate: "",
     amount: "",
     money: 0,
+    crypto: "",
+    fiat: "",
     address: "",
     from_address: "",
     status: 0,
@@ -76,11 +86,16 @@ export const useOrderDetail = () => {
     detailData.value = {
       id: 0,
       order_id: "",
+      user_id: "",
+      username: "",
+      display_name: "",
       trade_id: "",
       trade_type: "",
       rate: "",
       amount: "",
       money: 0,
+      crypto: "",
+      fiat: "",
       address: "",
       from_address: "",
       status: 0,

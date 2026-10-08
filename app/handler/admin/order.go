@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,8 @@ type oListReq struct {
 	Money     string `json:"money"`
 	Amount    string `json:"amount"`
 	OrderId   string `json:"order_id"`
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
 	TradeId   string `json:"trade_id"`
 	Status    *uint8 `json:"status"`
 	Address   string `json:"address"`
@@ -34,12 +37,15 @@ type paidReq struct {
 }
 
 type createReq struct {
-	Amount     float64    `json:"amount" binding:"required"`
-	OrderID    string     `json:"order_id" binding:"required"`
-	Name       string     `json:"name"`
-	Fiat       model.Fiat `json:"fiat"`
-	Currencies string     `json:"currencies"`
-	Timeout    int64      `json:"timeout"`
+	UserID      base.UserMetadataText `json:"user_id"`
+	Username    base.UserMetadataText `json:"username"`
+	DisplayName base.UserMetadataText `json:"display_name"`
+	Amount      float64               `json:"amount" binding:"required"`
+	OrderID     string                `json:"order_id" binding:"required"`
+	Name        string                `json:"name"`
+	Fiat        model.Fiat            `json:"fiat"`
+	Currencies  string                `json:"currencies"`
+	Timeout     int64                 `json:"timeout"`
 }
 
 func (Order) Create(ctx *gin.Context) {
@@ -56,6 +62,9 @@ func (Order) Create(ctx *gin.Context) {
 	order, err := model.BuildPendingOrder(model.OrderParams{
 		Money:         decimal.NewFromFloat(req.Amount),
 		ApiType:       model.OrderApiTypeAdmin, // 使用 Admin 类型
+		UserID:        string(req.UserID),
+		Username:      string(req.Username),
+		DisplayName:   string(req.DisplayName),
 		OrderId:       req.OrderID,
 		Name:          req.Name,
 		Timeout:       req.Timeout,
@@ -81,7 +90,8 @@ func (Order) Create(ctx *gin.Context) {
 	order.NotifyUrl = hostUri + "/api/v1/pay/notify"
 	order.ReturnUrl = url
 
-	if err := model.Db.Save(&order).Error; err != nil {
+	if err := model.Db.Model(&model.Order{}).Where("id = ?", order.ID).
+		Updates(map[string]any{"notify_url": order.NotifyUrl, "return_url": order.ReturnUrl}).Error; err != nil {
 		base.Response(ctx, 400, gin.H{
 			"status":  "failed",
 			"message": "failed to update order urls: " + err.Error(),
@@ -125,6 +135,13 @@ func (Order) List(ctx *gin.Context) {
 	if req.OrderId != "" {
 		db = db.Where("order_id like ?", "%"+req.OrderId+"%")
 	}
+	if userID := strings.TrimSpace(req.UserID); userID != "" {
+		db = db.Where("user_id = ?", userID)
+	}
+	if username := strings.TrimSpace(req.Username); username != "" {
+		keyword := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(username) + "%"
+		db = db.Where("(username LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!')", keyword, keyword)
+	}
 	if req.TradeId != "" {
 		db = db.Where("trade_id like ?", "%"+req.TradeId+"%")
 	}
@@ -146,7 +163,10 @@ func (Order) List(ctx *gin.Context) {
 
 	var total int64
 
-	db.Model(&model.Order{}).Count(&total)
+	if err := db.Model(&model.Order{}).Count(&total).Error; err != nil {
+		base.Error(ctx, err)
+		return
+	}
 
 	err := db.Preload("Wallet").Limit(req.Size).Offset((req.Page - 1) * req.Size).Order("id " + req.Sort).Find(&data).Error
 	if err != nil {
@@ -155,7 +175,17 @@ func (Order) List(ctx *gin.Context) {
 		return
 	}
 
-	base.Response(ctx, 200, data, total)
+	type item struct {
+		order
+		UserID      string `json:"user_id"`
+		Username    string `json:"username"`
+		DisplayName string `json:"display_name"`
+	}
+	items := make([]item, 0, len(data))
+	for _, o := range data {
+		items = append(items, item{order: o, UserID: o.UserID, Username: o.Username, DisplayName: o.DisplayName})
+	}
+	base.Response(ctx, 200, items, total)
 }
 
 func (Order) Detail(ctx *gin.Context) {
@@ -168,7 +198,10 @@ func (Order) Detail(ctx *gin.Context) {
 
 	type detail struct {
 		model.Order
-		TxUrl string `gorm:"-" json:"tx_url"`
+		TxUrl       string `gorm:"-" json:"tx_url"`
+		UserID      string `json:"user_id"`
+		Username    string `json:"username"`
+		DisplayName string `json:"display_name"`
 	}
 
 	var o model.Order
@@ -180,8 +213,11 @@ func (Order) Detail(ctx *gin.Context) {
 	}
 
 	base.Ok(ctx, detail{
-		Order: o,
-		TxUrl: o.GetTxUrl(),
+		Order:       o,
+		TxUrl:       o.GetTxUrl(),
+		UserID:      o.UserID,
+		Username:    o.Username,
+		DisplayName: o.DisplayName,
 	})
 }
 

@@ -105,6 +105,26 @@
           </a-col>
         </a-row>
         <a-row :gutter="24">
+          <a-col :xs="24" :sm="24" :md="8">
+            <div class="detail-item">
+              <div class="detail-label"><icon-user /><span>用户ID</span></div>
+              <div class="detail-value user-value">{{ detailData.user_id || "未提供" }}</div>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="24" :md="8">
+            <div class="detail-item">
+              <div class="detail-label"><icon-user /><span>用户名</span></div>
+              <div class="detail-value user-value">{{ detailData.username || "未提供" }}</div>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="24" :md="8">
+            <div class="detail-item">
+              <div class="detail-label"><icon-user /><span>显示名称</span></div>
+              <div class="detail-value user-value">{{ detailData.display_name || "未提供" }}</div>
+            </div>
+          </a-col>
+        </a-row>
+        <a-row :gutter="24">
           <a-col :xs="24" :sm="24" :md="12">
             <div class="detail-item">
               <div class="detail-label">
@@ -297,14 +317,9 @@ import { getCryptoColor } from "@/views/rate/common";
 import { cancelOrderAPI, delOrderApi, manualNotifyAPI } from "@/api/modules/order/index";
 import { Notification, Modal } from "@arco-design/web-vue";
 import { useLayoutModel } from "@/hooks/useLayoutModel";
+import type { Detail } from "../detail";
 
-const props = defineProps({
-  visible: Boolean,
-  detailData: {
-    type: Object,
-    required: true
-  }
-});
+const props = defineProps<{ visible: boolean; detailData: Detail }>();
 
 const { dialogWidth } = useLayoutModel();
 const detailDialogWidth = computed(() => dialogWidth("820px"));
@@ -391,7 +406,7 @@ const statusMap: Record<number, { color: string; text: string }> = {
 const getStatusColor = (status: number) => statusMap[status]?.color || "gray";
 const getStatusText = (status: number) => statusMap[status]?.text || "未知状态";
 
-const formatDateTime = (dateTimeStr: string) => {
+const formatDateTime = (dateTimeStr: string | undefined) => {
   if (!dateTimeStr) return "";
   const date = new Date(dateTimeStr);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
@@ -409,6 +424,11 @@ const getCurrencySymbol = (fiat: string) => currencySymbolMap[fiat] || "";
 </script>
 
 <style lang="scss" scoped>
+.user-value {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .diagnostic-value {
   overflow-wrap: anywhere;
   white-space: normal;

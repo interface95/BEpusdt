@@ -3,6 +3,7 @@ package notifier
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -57,21 +58,17 @@ func (t *Telegram) Success(o model.Order) {
 
 	token := string(tokenType)
 
-	text := `
-\#收款成功 \#订单交易 \#` + token + `
-\-\-\-
-` + "```" + `
-🚦商户订单：%v
-💰请求金额：%v ` + string(o.Fiat) + `(%v)
+	text := `🚦商户订单：%v
+%s💰请求金额：%v ` + string(o.Fiat) + `(%v)
 💲支付数额：%v ` + tradeType + `
 💎交易哈希：%s
 ✅收款地址：%s
 ⏱️创建时间：%s
 ️🎯️支付时间：%s
-` + "```" + `
 `
 	text = fmt.Sprintf(text,
 		o.OrderId,
+		telegramOrderUserText(o),
 		o.Money,
 		o.Rate,
 		o.Amount,
@@ -82,8 +79,8 @@ func (t *Telegram) Success(o model.Order) {
 	)
 
 	t.sendMessage(&bot.SendMessageParams{
-		Text:      text,
-		ParseMode: models.ParseModeMarkdown,
+		Text:      "#收款成功 #订单交易 #" + token + "\n<pre>" + html.EscapeString(text) + "</pre>",
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
@@ -105,20 +102,16 @@ func (t *Telegram) NotifyFail(o model.Order, reason string) {
 
 	token := string(tokenT)
 
-	text := fmt.Sprintf(`
-\#回调失败 \#订单交易 \#`+token+`
-\-\-\-
-`+"```"+`
-🚦商户订单：%v
-💲支付数额：%v
+	text := fmt.Sprintf(`🚦商户订单：%v
+%s💲支付数额：%v
 💰请求金额：%v `+string(o.Fiat)+`(%v)
 💍交易类别：%s
 ⚖️️确认时间：%s
 ⏰下次回调：%s
 🗒️失败原因：%s
-`+"```"+`
 `,
-		utils.Ec(o.OrderId),
+		o.OrderId,
+		telegramOrderUserText(o),
 		o.Amount,
 		o.Money, o.Rate,
 		strings.ToUpper(tradeType),
@@ -128,16 +121,30 @@ func (t *Telegram) NotifyFail(o model.Order, reason string) {
 	)
 
 	t.sendMessage(&bot.SendMessageParams{
-		Text:      text,
-		ParseMode: models.ParseModeMarkdown,
+		Text:      "#回调失败 #订单交易 #" + token + "\n<pre>" + html.EscapeString(text) + "</pre>",
+		ParseMode: models.ParseModeHTML,
 		ReplyMarkup: &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					models.InlineKeyboardButton{Text: "📝查看收款详情", CallbackData: o.GetTxUrl()},
+					models.InlineKeyboardButton{Text: "📝查看收款详情", URL: o.GetTxUrl()},
 				},
 			},
 		},
 	})
+}
+
+func telegramOrderUserText(o model.Order) string {
+	var text strings.Builder
+	if o.UserID != "" {
+		fmt.Fprintf(&text, "用户 ID：%s\n", o.UserID)
+	}
+	if o.Username != "" {
+		fmt.Fprintf(&text, "用户名：%s\n", o.Username)
+	}
+	if o.DisplayName != "" {
+		fmt.Fprintf(&text, "显示名称：%s\n", o.DisplayName)
+	}
+	return text.String()
 }
 
 func (t *Telegram) NonOrderTransfer(trans model.TronTransfer, wa model.Wallet) {

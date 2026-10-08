@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
+	"github.com/v03413/bepusdt/app/handler/base"
 	"github.com/v03413/bepusdt/app/log"
 	"github.com/v03413/bepusdt/app/model"
 	"github.com/v03413/bepusdt/app/utils"
@@ -18,29 +19,35 @@ import (
 type Epusdt struct{}
 
 type createReq struct {
-	OrderID     string     `json:"order_id" binding:"required"`
-	NotifyURL   string     `json:"notify_url" binding:"required"`
-	RedirectURL string     `json:"redirect_url" binding:"required"`
-	Signature   string     `json:"signature" binding:"required"`
-	Amount      float64    `json:"amount"`
-	Name        string     `json:"name"`
-	Fiat        model.Fiat `json:"fiat"`
-	TradeType   string     `json:"trade_type"`
-	Address     string     `json:"address"`
-	Timeout     int64      `json:"timeout"`
-	Rate        string     `json:"rate"`
+	UserID      base.UserMetadataText `json:"user_id"`
+	Username    base.UserMetadataText `json:"username"`
+	DisplayName base.UserMetadataText `json:"display_name"`
+	OrderID     string                `json:"order_id" binding:"required"`
+	NotifyURL   string                `json:"notify_url" binding:"required"`
+	RedirectURL string                `json:"redirect_url" binding:"required"`
+	Signature   string                `json:"signature" binding:"required"`
+	Amount      float64               `json:"amount"`
+	Name        string                `json:"name"`
+	Fiat        model.Fiat            `json:"fiat"`
+	TradeType   string                `json:"trade_type"`
+	Address     string                `json:"address"`
+	Timeout     int64                 `json:"timeout"`
+	Rate        string                `json:"rate"`
 }
 
 type createOrderReq struct {
-	OrderID     string     `json:"order_id" binding:"required"`
-	NotifyURL   string     `json:"notify_url" binding:"required"`
-	RedirectURL string     `json:"redirect_url" binding:"required"`
-	Signature   string     `json:"signature" binding:"required"`
-	Amount      float64    `json:"amount"`
-	Name        string     `json:"name"`
-	Fiat        model.Fiat `json:"fiat"`
-	Currencies  string     `json:"currencies"`
-	Timeout     int64      `json:"timeout"`
+	UserID      base.UserMetadataText `json:"user_id"`
+	Username    base.UserMetadataText `json:"username"`
+	DisplayName base.UserMetadataText `json:"display_name"`
+	OrderID     string                `json:"order_id" binding:"required"`
+	NotifyURL   string                `json:"notify_url" binding:"required"`
+	RedirectURL string                `json:"redirect_url" binding:"required"`
+	Signature   string                `json:"signature" binding:"required"`
+	Amount      float64               `json:"amount"`
+	Name        string                `json:"name"`
+	Fiat        model.Fiat            `json:"fiat"`
+	Currencies  string                `json:"currencies"`
+	Timeout     int64                 `json:"timeout"`
 }
 
 type updateOrderReq struct {
@@ -138,6 +145,9 @@ func (Epusdt) CreateOrder(ctx *gin.Context) {
 	order, err := model.BuildPendingOrder(model.OrderParams{
 		Money:         decimal.NewFromFloat(req.Amount),
 		ApiType:       model.OrderApiTypeEpusdtOrder,
+		UserID:        string(req.UserID),
+		Username:      string(req.Username),
+		DisplayName:   string(req.DisplayName),
 		OrderId:       req.OrderID,
 		RedirectUrl:   req.RedirectURL,
 		NotifyUrl:     req.NotifyURL,
@@ -279,6 +289,9 @@ func (Epusdt) CreateTransaction(ctx *gin.Context) {
 	order, err := model.StartBuildOrder(model.OrderParams{
 		Money:         decimal.NewFromFloat(req.Amount),
 		ApiType:       model.OrderApiTypeEpusdt,
+		UserID:        string(req.UserID),
+		Username:      string(req.Username),
+		DisplayName:   string(req.DisplayName),
 		Address:       req.Address,
 		AddressLocked: req.Amount == 0,
 		OrderId:       req.OrderID,

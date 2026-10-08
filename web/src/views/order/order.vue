@@ -29,7 +29,7 @@
 
           <a-col :xs="24" :sm="24" :md="12" :lg="12" :xl="6" :xxl="6">
             <a-space class="search-btn" wrap>
-              <a-button type="primary" @click="getOrderList">
+              <a-button type="primary" @click="onSearch">
                 <template #icon><icon-search /></template>
                 查询
               </a-button>
@@ -66,6 +66,16 @@
               <a-range-picker v-model="formData.form.createTime" show-time format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
             </a-form-item>
           </a-col>
+          <a-col :xs="24" :sm="24" :md="12" :lg="12" :xl="6" :xxl="6">
+            <a-form-item field="user_id" label="用户ID">
+              <a-input v-model="formData.form.user_id" placeholder="请输入用户ID" allow-clear />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :sm="24" :md="12" :lg="12" :xl="6" :xxl="6">
+            <a-form-item field="username" label="用户名称">
+              <a-input v-model="formData.form.username" placeholder="请输入用户名或显示名称" allow-clear />
+            </a-form-item>
+          </a-col>
         </a-row>
       </a-form>
 
@@ -83,6 +93,29 @@
         @page-change="pageChange"
         @page-size-change="pageSizeChange"
       >
+        <template #user="{ record }">
+          <div class="order-user">
+            <template v-if="record.user_id || record.username || record.display_name">
+              <div v-if="record.user_id" class="order-user-id" :title="record.user_id">ID: {{ record.user_id }}</div>
+              <div
+                v-if="record.display_name || record.username"
+                class="order-user-name"
+                :title="record.display_name || record.username"
+              >
+                {{ record.display_name || record.username }}
+              </div>
+              <div
+                v-if="record.username && record.display_name && record.username !== record.display_name"
+                class="order-user-username"
+                :title="record.username"
+              >
+                {{ record.username }}
+              </div>
+            </template>
+            <span v-else class="order-user-empty">未提供</span>
+          </div>
+        </template>
+
         <template #wallet="{ record }">
           <a-tooltip :content="record.address" position="top">
             <span class="wallet-name">
@@ -184,7 +217,7 @@ import { useLayoutModel } from "@/hooks/useLayoutModel";
 
 const userStores = useUserInfoStore();
 const { detailVisible, detailData, showDetail, closeDetail } = useOrderDetail();
-const { dialogWidth } = useLayoutModel();
+const { dialogWidth, tableFixed } = useLayoutModel();
 const paidDialogWidth = computed(() => dialogWidth("500px"));
 const tradeTypeOptions = computed(() => Object.entries(userStores.trade_type).map(([value, label]) => ({ value, label })));
 
@@ -200,6 +233,8 @@ const statusOptions = [
 const formData = reactive<FormData>({
   form: {
     order_id: "",
+    user_id: "",
+    username: "",
     trade_id: "",
     trade_type: "",
     address: "",
@@ -225,9 +260,10 @@ const pagination = ref<Pagination>({
   total: 10
 });
 
-const columns = [
+const columns = computed(() => [
   { title: "ID", align: "center", dataIndex: "id", width: 80 },
   { title: "商户订单", align: "center", dataIndex: "order_id", width: 220, ellipsis: true, tooltip: true },
+  { title: "用户", dataIndex: "user_id", slotName: "user", width: 190 },
   { title: "交易类型", align: "center", dataIndex: "trade_type", width: 120 },
   { title: "交易数额", align: "center", dataIndex: "amount", slotName: "amount", width: 150 },
   { title: "交易金额", align: "center", dataIndex: "money", slotName: "money", width: 150 },
@@ -235,8 +271,8 @@ const columns = [
   { title: "交易状态", dataIndex: "status", align: "center", slotName: "status", width: 100 },
   { title: "回调", dataIndex: "notify_state", align: "center", slotName: "notify_state", width: 80 },
   { title: "创建时间", dataIndex: "created_at", align: "center", width: 160 },
-  { title: "操作", slotName: "optional", align: "center", fixed: "right", width: 150 }
-];
+  { title: "操作", slotName: "optional", align: "center", fixed: tableFixed.value, width: 150 }
+]);
 
 const statusMap: Record<number, { color: string; text: string }> = {
   1: { color: "blue", text: "等待支付" },
@@ -260,28 +296,37 @@ const pageSizeChange = (pageSize: number) => {
   getOrderList();
 };
 
+const onSearch = () => {
+  pagination.value.current = 1;
+  getOrderList();
+};
+
 const onReset = () => {
   formData.form = {
     order_id: "",
+    user_id: "",
+    username: "",
     trade_id: "",
     trade_type: "",
     address: "",
     status: undefined,
     createTime: []
   };
-  getOrderList();
+  onSearch();
 };
 
 const getOrderList = async () => {
   try {
     loading.value = true;
 
-    const params: any = {
+    const params: Record<string, string | number> = {
       page: pagination.value.current,
       size: pagination.value.pageSize,
       sort: "desc",
       keyword: "",
       order_id: formData.form.order_id,
+      user_id: formData.form.user_id,
+      username: formData.form.username,
       trade_id: formData.form.trade_id,
       address: formData.form.address,
       trade_type: formData.form.trade_type
@@ -375,6 +420,27 @@ getOrderList();
   &:hover {
     text-decoration: underline;
   }
+}
+
+.order-user {
+  max-width: 170px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.order-user-id,
+.order-user-name,
+.order-user-username {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-user-id,
+.order-user-username,
+.order-user-empty {
+  color: var(--color-text-2);
+  font-size: 12px;
 }
 
 // 在 style 标签中添加

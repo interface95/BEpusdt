@@ -29,11 +29,37 @@
 >
 > 独占模式下，回调中的 `amount`（法币）和 `actual_amount`（加密货币）均以**实际到账金额**为准，创建订单时无需预设金额。
 
+### 用户元数据、快照与隐私
+
+`create-transaction`、`create-order` 和鉴权后台 `POST /api/order/create` 均支持以下可选字段：
+
+| 参数名 | 类型 | 上限 | 说明 |
+|--------|------|------|------|
+| user_id | string | 64 个 Unicode 字符 | 商户提供的用户标识；标识视为字符串，保留前导零 |
+| username | string | 64 个 Unicode 字符 | 下单时的用户名 |
+| display_name | string | 128 个 Unicode 字符 | 下单时的显示名称 |
+
+- 必须是有效 UTF-8 字符串，不允许 Unicode 控制字符（包括换行、制表符、NUL、DEL、C1 控制符）。先检查控制字符，再去除首尾 Unicode 空白；长度按去除空白后的 Unicode 码点计算，不按 UTF-8 字节数计算。`null`、数字、布尔、数组和对象不作为字符串接受。
+- 全部字段可省略。旧客户端无需修改，旧订单升级后新增字段默认空字符串，不从订单号、商品名或钱包等数据推测身份；已有金额、状态不变。沿用启动时的 `AutoMigrate` 增加列及 `user_id` 索引。
+- 字段是**订单快照**：同一 `order_id` 已有的非空字段不覆盖，改名请求也保留原用户名/显示名称；空字段可由签名下单请求或后台创建请求显式补齐。省略、空字符串或 trim 后为空都不会清空已有数据。
+- 已绑定的非空 `user_id` 与新请求中的非空 `user_id` 不同则拒绝，待付、确认中、成功和终止状态均适用。终止订单通过同一订单号重新创建时继承最近一次订单快照。公开的币种/网络重选只修改付款信息，不接受用户元数据变更。
+- 原生接口中的这三个字段按**请求原值**参与现有签名计算，验签后才 trim/校验；空值处理沿用原签名算法。签名示例的值若有改变，应重新计算签名。
+- 默认序列化 `Order` 时三个字段均为 `json:"-"`。仅鉴权管理订单 `List/Detail` 显式输出；原生创建响应、公开 checkout/info/methods/update-order/notify、商户异步回调及易支付跳转参数不新增这些字段，回调字段和签名契约不变。直接序列化 `Order` 的其它通知载荷也不包含这些字段。
+
+### 管理订单查询
+
+以下后台接口沿用现有管理员鉴权，不是公开商户查询接口：
+
+- `POST /api/order/create`：在已有创建参数基础上接收上述可选字段，创建响应不回显用户元数据。
+- `POST /api/order/list`：在已有分页、排序和订单筛选参数基础上，新增可选 `user_id` 精确过滤；`username` 对 `username` 或 `display_name` 做包含匹配。二者首尾 trim 后为空时不筛选，并可与其它筛选条件共同使用；`%`、`_`、`!`、反斜杠均按字面关键词处理，参数通过 SQL 占位符传入。
+- `POST /api/order/detail`：仍使用 `{"id":订单记录ID}` 查询。
+- 列表每项和详情 `data` 显式返回字符串 `user_id`、`username`、`display_name`，无元数据时为空字符串。已有 `wallet`、`tx_url`、分页字段和其它响应字段保持原结构。
+
 ### 1. 创建交易
 
 创建支付订单并获取收银台付款地址。
 
-> **注意**：使用相同 `order_id` 创建订单时，系统会根据最新参数重建订单（订单金额、交易类型、收款地址、法币类型），同时超时时间重置。这意味着商户可以基于同一订单号实现独立收银台，灵活变更支付参数。
+> **注意**：使用相同 `order_id` 时，确认中或成功订单直接复用；待付订单仅在订单号、金额、交易类型或法币变化时重建付款信息并重置超时，相同付款参数直接复用。其它状态可能创建新交易记录。用户元数据始终遵循上方快照和绑定规则，不随重建覆盖。
 
 #### 请求地址
 
@@ -49,6 +75,9 @@ POST /api/v1/order/create-transaction
 | notify_url   | string | ✅  | 支付结果异步回调地址                                                                                                                                                  |
 | redirect_url | string | ✅  | 支付成功后商户跳转地址                                                                                                                                                 |
 | signature    | string | ✅  | 签名字符串（详见[签名算法](#签名算法)）                                                                                                                                      |
+| user_id      | string | ❌  | 用户标识，最多 64 个 Unicode 字符；详见用户元数据、快照与隐私 |
+| username     | string | ❌  | 用户名，最多 64 个 Unicode 字符 |
+| display_name | string | ❌  | 显示名称，最多 128 个 Unicode 字符 |
 | amount       | number | ❌  | 支付金额（法币金额）；留空或传 `0` 则进入**地址独占模式**，收到任意金额均触发回调（详见[执行原理](./how-it-works.md)）                                                                                  |
 | trade_type   | string | ❌  | 交易类型，默认 `usdt.trc20`<br/>完整列表：[trade-type.md](../trade-type.md)                                                                                             |
 | fiat         | string | ❌  | 法币类型，默认 `CNY`<br/>可选：`CNY`、`USD`、`EUR`、`GBP`、`JPY`                                                                                                          |
@@ -161,7 +190,7 @@ POST /api/v1/order/cancel-transaction
 <details>
 <summary><strong>3. 创建订单</strong>　创建收银台订单，让用户在付款页自由选择支付方式。</summary>
 
-> **注意**：使用相同 `order_id` 创建订单时，系统会根据最新参数重建订单（订单金额、交易类型、收款地址、法币类型），同时超时时间重置。
+> **注意**：使用相同 `order_id` 时，待付、确认中或成功订单直接复用，不重新设置金额或超时；其它状态可能创建新交易记录。用户元数据始终遵循上方快照和绑定规则。
 
 #### 请求地址
 
@@ -177,6 +206,9 @@ POST /api/v1/order/create-order
 | notify_url   | string | ✅  | 支付结果异步回调地址                                                                                                                               |
 | redirect_url | string | ✅  | 支付成功后商户跳转地址                                                                                                                              |
 | signature    | string | ✅  | 签名字符串（详见[签名算法](#签名算法)）                                                                                                                   |
+| user_id      | string | ❌  | 用户标识，最多 64 个 Unicode 字符；详见用户元数据、快照与隐私 |
+| username     | string | ❌  | 用户名，最多 64 个 Unicode 字符 |
+| display_name | string | ❌  | 显示名称，最多 128 个 Unicode 字符 |
 | amount       | number | ❌  | 支付金额（法币金额）；留空或传 `0` 则进入**地址独占模式**，收到任意金额均触发回调（详见[执行原理](./how-it-works.md)）                                                               |
 | currencies   | string | ❌  | 限定交易币种，留空则不限制付款币种。<br/>多个币种请使用半角逗号分隔，黑名单模式以短横线开头。<br/>例如：<br/>`USDT`（仅限 USDT）<br/>`USDT,USDC` （限 USDT/USDC）<br/>`-ETH,-BNB` （排除 ETH/BNB） |
 | fiat         | string | ❌  | 法币类型，默认 `CNY`<br/>可选：`CNY`、`USD`、`EUR`、`GBP`、`JPY`                                                                                       |

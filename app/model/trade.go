@@ -13,14 +13,17 @@ import (
 )
 
 type OrderParams struct {
-	Money             decimal.Decimal `json:"money"`              // 交易金额 (单位：法币)s
-	ApiType           string          `json:"api_type"`           // 支付 API 类型
-	Address           string          `json:"address"`            // 收款地址
-	OrderId           string          `json:"order_id"`           // 商户订单 ID
-	TradeType         TradeType       `json:"trade_type"`         // 交易类型
-	RedirectUrl       string          `json:"redirect_url"`       // 成功跳转地址
-	NotifyUrl         string          `json:"notify_url"`         // 异步通知地址
-	Name              string          `json:"name"`               // 商品名称
+	Money             decimal.Decimal `json:"money"`        // 交易金额 (单位：法币)s
+	ApiType           string          `json:"api_type"`     // 支付 API 类型
+	Address           string          `json:"address"`      // 收款地址
+	OrderId           string          `json:"order_id"`     // 商户订单 ID
+	TradeType         TradeType       `json:"trade_type"`   // 交易类型
+	RedirectUrl       string          `json:"redirect_url"` // 成功跳转地址
+	NotifyUrl         string          `json:"notify_url"`   // 异步通知地址
+	Name              string          `json:"name"`         // 商品名称
+	UserID            string          `json:"user_id"`
+	Username          string          `json:"username"`
+	DisplayName       string          `json:"display_name"`
 	Timeout           int64           `json:"timeout"`            // 订单超时时间（秒）
 	Rate              string          `json:"rate"`               // 强制指定汇率
 	Fiat              Fiat            `json:"fiat"`               // 法币类型
@@ -45,6 +48,10 @@ var buildMutex sync.Mutex
 
 func StartBuildOrder(p OrderParams) (Order, error) {
 	var order Order
+	p, err := normalizeOrderUserMetadata(p)
+	if err != nil {
+		return order, err
+	}
 
 	if p.Address != "" {
 		if !utils.IsValidTronAddress(p.Address) &&
@@ -68,20 +75,28 @@ func StartBuildOrder(p OrderParams) (Order, error) {
 		return order, fmt.Errorf("交易金额必须在 %s - %s 之间", minAmount.String(), maxAmount.String())
 	}
 
-	Db.Where("order_id = ?", p.OrderId).Order("id desc").Limit(1).Find(&order)
+	if err := Db.Where("order_id = ?", p.OrderId).Order("id desc").Limit(1).Find(&order).Error; err != nil {
+		return order, err
+	}
 	if order.Status == OrderStatusSuccess || order.Status == OrderStatusConfirming {
-		return order, nil
+		return saveOrderUserMetadata(order, p)
 	}
 
 	buildMutex.Lock()
 	defer buildMutex.Unlock()
 
-	Db.Where("order_id = ?", p.OrderId).Order("id desc").Limit(1).Find(&order)
+	if err := Db.Where("order_id = ?", p.OrderId).Order("id desc").Limit(1).Find(&order).Error; err != nil {
+		return order, err
+	}
 	if order.Status == OrderStatusSuccess || order.Status == OrderStatusConfirming {
-		return order, nil
+		return saveOrderUserMetadata(order, p)
 	}
 	if order.Status == OrderStatusWaiting {
 		return RebuildOrder(order, p)
+	}
+	p, err = mergeOrderUserMetadata(order, p)
+	if err != nil {
+		return order, err
 	}
 
 	data, err := BuildTrade(p)
@@ -93,6 +108,10 @@ func StartBuildOrder(p OrderParams) (Order, error) {
 }
 
 func BuildOrder(p OrderParams, trade Trade) (Order, error) {
+	p, err := normalizeOrderUserMetadata(p)
+	if err != nil {
+		return Order{}, err
+	}
 	tradeId, err := utils.GenerateTradeId()
 	if err != nil {
 		return Order{}, err
@@ -112,6 +131,9 @@ func BuildOrder(p OrderParams, trade Trade) (Order, error) {
 		AddressLocked: p.Money.IsZero(), // 零值订单，地址锁定 独占
 		Status:        OrderStatusWaiting,
 		Name:          p.Name,
+		UserID:        p.UserID,
+		Username:      p.Username,
+		DisplayName:   p.DisplayName,
 		ApiType:       p.ApiType,
 		ReturnUrl:     p.RedirectUrl,
 		NotifyUrl:     p.NotifyUrl,
@@ -181,8 +203,16 @@ func BuildTrade(p OrderParams) (Trade, error) {
 }
 
 func RebuildOrder(t Order, p OrderParams) (Order, error) {
+	p, err := normalizeOrderUserMetadata(p)
+	if err != nil {
+		return t, err
+	}
+	p, err = mergeOrderUserMetadata(t, p)
+	if err != nil {
+		return t, err
+	}
 	if p.OrderId == t.OrderId && p.TradeType == t.TradeType && p.Money.String() == t.Money && p.Fiat == t.Fiat {
-		return t, nil
+		return saveOrderUserMetadata(t, p)
 	}
 
 	data, err := BuildTrade(p)
@@ -204,7 +234,8 @@ func RebuildOrder(t Order, p OrderParams) (Order, error) {
 	t.Rate = fmt.Sprintf("%v", data.Rate)
 	t.ExpiredAt = CalcTradeExpiredAt(p.Timeout)
 
-	query := Db.Model(&Order{}).Where("id = ?", t.ID)
+	query := Db.Model(&Order{}).Where("id = ?", t.ID).
+		Where("user_id = ? AND username = ? AND display_name = ?", t.UserID, t.Username, t.DisplayName)
 	if p.ClientFingerprint != "" {
 		query = query.Where("(client_fingerprint = '' OR client_fingerprint = ?)", p.ClientFingerprint)
 	}
@@ -220,13 +251,17 @@ func RebuildOrder(t Order, p OrderParams) (Order, error) {
 		"rate":               t.Rate,
 		"expired_at":         t.ExpiredAt,
 		"client_fingerprint": t.ClientFingerprint,
+		"user_id":            p.UserID,
+		"username":           p.Username,
+		"display_name":       p.DisplayName,
 	})
 	if res.Error != nil {
 		return t, res.Error
 	}
 	if res.RowsAffected == 0 {
-		return t, fmt.Errorf("client fingerprint mismatch")
+		return t, fmt.Errorf("order metadata or client fingerprint changed")
 	}
+	t.UserID, t.Username, t.DisplayName = p.UserID, p.Username, p.DisplayName
 
 	return t, nil
 }
@@ -234,6 +269,10 @@ func RebuildOrder(t Order, p OrderParams) (Order, error) {
 // BuildPendingOrder 创建待支付订单（不锁定地址和汇率）
 func BuildPendingOrder(p OrderParams) (Order, error) {
 	var order Order
+	p, err := normalizeOrderUserMetadata(p)
+	if err != nil {
+		return order, err
+	}
 
 	maxAmount := decimal.NewFromFloat(cast.ToFloat64(GetC(PaymentMaxAmount)))
 	minAmount := decimal.NewFromFloat(cast.ToFloat64(GetC(PaymentMinAmount)))
@@ -241,9 +280,15 @@ func BuildPendingOrder(p OrderParams) (Order, error) {
 		return order, fmt.Errorf("交易金额必须在 %s - %s 之间", minAmount.String(), maxAmount.String())
 	}
 
-	Db.Where("order_id = ?", p.OrderId).Order("id desc").Limit(1).Find(&order)
+	if err := Db.Where("order_id = ?", p.OrderId).Order("id desc").Limit(1).Find(&order).Error; err != nil {
+		return order, err
+	}
 	if order.Status == OrderStatusSuccess || order.Status == OrderStatusConfirming || order.Status == OrderStatusWaiting {
-		return order, nil
+		return saveOrderUserMetadata(order, p)
+	}
+	p, err = mergeOrderUserMetadata(order, p)
+	if err != nil {
+		return order, err
 	}
 
 	// 默认使用 USDT

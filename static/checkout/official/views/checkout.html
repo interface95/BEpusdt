@@ -6,11 +6,11 @@
     <title>BEpusdt 一款更好用的个人加密货币收款网关</title>
     <link rel="shortcut icon" href="/checkout/official/assets/img/bepusdt.svg">
     <link rel="stylesheet" href="/checkout/official/assets/css/checkout.css">
-    <link rel="stylesheet" href="/checkout/official/assets/css/payment.css?v=20260907-2">
+    <link rel="stylesheet" href="/checkout/official/assets/css/payment.css?v=20261008-1">
     <script src="/checkout/official/assets/js/jquery.min.js"></script>
     <script src="/checkout/official/assets/js/jquery.qrcode.min.js"></script>
     <script src="/checkout/official/assets/js/i18next.min.js"></script>
-    <script src="/checkout/official/assets/js/checkout.js?v=20260907-2"></script>
+    <script src="/checkout/official/assets/js/checkout.js?v=20261008-1"></script>
 </head>
 <body>
 <div class="checkout-card payment-checkout" id="selectionStage" style="display:none;">
@@ -42,6 +42,13 @@
         <div><strong data-i18n="actualReceiptWarning">这是到账金额，不是提现数量</strong><p data-i18n="selectionReceiptWarning">手续费需另行承担。请确认币种和网络，并以最终付款页显示的应到账金额为准。</p></div>
     </div>
     <div class="selection-form">
+        <div class="recommended-network" id="recommendedNetwork" hidden>
+            <div class="recommended-network-heading">
+                <img src="/checkout/official/assets/web3icons/network/bsc.svg" width="20" height="20" alt="" aria-hidden="true">
+                <strong data-i18n="recommendedNetworkTitle">推荐使用 USDT · BEP20</strong>
+            </div>
+            <p data-i18n="recommendedNetworkNote">链上手续费通常较低，实际提现费用以钱包或交易所为准。</p>
+        </div>
         <label class="form-label" data-i18n="transferCurrency">转账币种</label>
         <div class="custom-select" id="currencySelect">
             <div class="select-trigger">

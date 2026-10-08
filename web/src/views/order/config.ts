@@ -1,6 +1,9 @@
 interface List {
   id: number;
   order_id: string;
+  user_id?: string;
+  username?: string;
+  display_name?: string;
   trade_id: string;
   trade_type: string;
   rate: string;
@@ -26,6 +29,8 @@ interface List {
 interface FormData {
   form: {
     order_id: string;
+    user_id: string;
+    username: string;
     trade_id: string;
     trade_type: string;
     address: string;

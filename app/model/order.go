@@ -81,6 +81,9 @@ type Order struct {
 	AddressLocked     bool       `gorm:"column:address_locked;not null;default:false;comment:地址锁定 1:独占 0:共享" json:"address_locked"`
 	Status            int        `gorm:"column:status;not null;default:1;index;index:idx_order_notify_retry,priority:1;comment:交易状态" json:"status"`
 	Name              string     `gorm:"column:name;type:varchar(64);not null;default:'';comment:商品名称" json:"name"`
+	UserID            string     `gorm:"column:user_id;type:varchar(64);not null;default:'';index" json:"-"`
+	Username          string     `gorm:"column:username;type:varchar(64);not null;default:''" json:"-"`
+	DisplayName       string     `gorm:"column:display_name;type:varchar(128);not null;default:''" json:"-"`
 	ApiType           string     `gorm:"column:api_type;type:varchar(20);not null;default:'epusdt';comment:API类型" json:"api_type"`
 	ReturnUrl         string     `gorm:"column:return_url;type:varchar(255);not null;default:'';comment:同步地址" json:"return_url"`
 	NotifyUrl         string     `gorm:"column:notify_url;type:varchar(255);not null;default:'';comment:异步地址" json:"notify_url"`

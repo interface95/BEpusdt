@@ -11,6 +11,7 @@
     var selCur = '', selMethod = null;
     var cfg = {}, tradeId = '';
     var cdTimer = null, stTimer = null;
+    var selectionVersion = 0;
 
     function detectLang() {
         try {
@@ -24,7 +25,7 @@
             if (typeof i18next === 'undefined') return resolve();
             i18next.init({ lng: lang, debug: false, resources: {} }, function (err) {
                 if (err) return resolve();
-                fetch('/checkout/official/assets/locales/' + lang + '.json?v=20260907-2')
+                fetch('/checkout/official/assets/locales/' + lang + '.json?v=20261008-1')
                     .then(function (r) { return r.json(); })
                     .then(function (d) {
                         i18next.addResourceBundle(lang, 'translation', d);
@@ -76,7 +77,7 @@
         if (l !== 'zh' && l !== 'en') { console.warn('Use "zh" or "en"'); return; }
         if (typeof i18next === 'undefined') return;
         lang = l;
-        fetch('/checkout/official/assets/locales/' + l + '.json?v=20260907-2')
+        fetch('/checkout/official/assets/locales/' + l + '.json?v=20261008-1')
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 i18next.addResourceBundle(l, 'translation', d, true, true);
@@ -126,7 +127,7 @@
         } else fb();
     }
 
-    function buildDropdown(id, items, onSelect) {
+    function buildDropdown(id, items, onSelect, selectedValue) {
         var w = document.getElementById(id);
         if (!w) return;
         var trigger = w.querySelector('.select-trigger');
@@ -142,6 +143,25 @@
         var search = dd.querySelector('.dropdown-search');
         var list = dd.querySelector('.dropdown-list');
 
+        function selectItem(it) {
+            selectedValue = it.value;
+            list.querySelectorAll('.dropdown-item').forEach(function (el) {
+                el.classList.toggle('selected', el.dataset.value === selectedValue);
+            });
+            var txt = trigger.querySelector('.select-text');
+            var oldImg = trigger.querySelector('.select-img');
+            if (oldImg) oldImg.remove();
+            var img = document.createElement('img');
+            img.className = 'select-img';
+            img.src = it.iconSrc;
+            img.alt = it.label;
+            img.addEventListener('error', function () { img.style.visibility = 'hidden'; });
+            trigger.insertBefore(img, trigger.firstChild);
+            if (txt) { txt.textContent = it.label; txt.classList.remove('placeholder'); txt.removeAttribute('data-i18n'); }
+            dd.classList.remove('open');
+            trigger.classList.remove('open');
+        }
+
         function render(filter) {
             list.innerHTML = '';
             var arr = filter ? items.filter(function (it) { return (it.label + ' ' + (it.searchAliases || '')).toLowerCase().indexOf(filter.toLowerCase()) !== -1; }) : items;
@@ -149,27 +169,16 @@
                 var el = document.createElement('div');
                 el.className = 'dropdown-item';
                 el.dataset.value = it.value;
+                el.classList.toggle('selected', it.value === selectedValue);
                 el.innerHTML =
                     '<img src="' + it.iconSrc + '" alt="' + it.label + '" class="item-img" onerror="this.style.visibility=\'hidden\'">' +
                     '<span class="item-label">' + it.label + '</span>' +
-                    (it.badge ? '<span class="item-badge">' + it.badge + '</span>' : '') +
+                    (it.badge ? '<span class="item-badge">' + (it.badgeKey ? t(it.badgeKey, it.badge) : it.badge) + '</span>' : '') +
                     '<svg class="item-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                if (it.badgeKey) el.querySelector('.item-badge').dataset.i18n = it.badgeKey;
                 el.addEventListener('click', function (e) {
                     e.stopPropagation();
-                    list.querySelectorAll('.dropdown-item').forEach(function (d) { d.classList.remove('selected'); });
-                    el.classList.add('selected');
-                    var txt = trigger.querySelector('.select-text');
-                    var oldImg = trigger.querySelector('.select-img');
-                    if (oldImg) oldImg.remove();
-                    var img = document.createElement('img');
-                    img.className = 'select-img';
-                    img.src = it.iconSrc;
-                    img.alt = it.label;
-                    img.addEventListener('error', function () { img.style.visibility = 'hidden'; });
-                    trigger.insertBefore(img, trigger.firstChild);
-                    if (txt) { txt.textContent = it.label; txt.classList.remove('placeholder'); txt.removeAttribute('data-i18n'); }
-                    dd.classList.remove('open');
-                    trigger.classList.remove('open');
+                    selectItem(it);
                     if (onSelect) onSelect(it.value, it);
                 });
                 list.appendChild(el);
@@ -177,24 +186,24 @@
         }
 
         render('');
+        var selected = items.find(function (it) { return it.value === selectedValue; });
+        if (selected) selectItem(selected);
         search.addEventListener('input', function () { render(this.value); });
         search.addEventListener('click', function (e) { e.stopPropagation(); });
 
-        if (!trigger.dataset.bound) {
-            trigger.dataset.bound = '1';
-            trigger.addEventListener('click', function (e) {
-                e.stopPropagation();
-                var open = dd.classList.contains('open');
-                document.querySelectorAll('.select-dropdown').forEach(function (d) { d.classList.remove('open'); });
-                document.querySelectorAll('.select-trigger').forEach(function (tt) { tt.classList.remove('open'); });
-                if (!open) {
-                    dd.classList.add('open');
-                    trigger.classList.add('open');
-                    var s = dd.querySelector('.dropdown-search');
-                    if (s) { s.value = ''; render(''); s.focus(); }
-                }
-            });
-        }
+        // Rebind to the current options after currency changes and fresh methods responses.
+        trigger.onclick = function (e) {
+            e.stopPropagation();
+            var open = dd.classList.contains('open');
+            document.querySelectorAll('.select-dropdown').forEach(function (d) { d.classList.remove('open'); });
+            document.querySelectorAll('.select-trigger').forEach(function (tt) { tt.classList.remove('open'); });
+            if (!open) {
+                dd.classList.add('open');
+                trigger.classList.add('open');
+                var s = dd.querySelector('.dropdown-search');
+                if (s) { s.value = ''; render(''); s.focus(); }
+            }
+        };
     }
 
     function resetTrigger(id, ph) {
@@ -269,11 +278,23 @@
     }
     function cached(src) { return iconCache[src] || src; }
 
-    function initSelectionUI() {
+    function isRecommendedMethod(method) {
+        return method.currency === 'USDT' && method.network === 'bsc';
+    }
+
+    function initSelectionUI(version) {
         if (!methods.length) return;
         var currencies = Array.from(new Set(methods.map(function (m) { return m.currency; })));
         var srcs = currencies.map(tokenIcon).concat(methods.map(function (m) { return netIcon(m.network); }));
         preloadIcons(srcs, function () {
+            if (version !== selectionVersion) return;
+            var recommended = methods.find(isRecommendedMethod);
+            var notice = document.getElementById('recommendedNetwork');
+            if (notice) notice.hidden = !recommended;
+            if (recommended && cfg.preferRecommended && cfg.status === 1 && !selCur && !selMethod) {
+                selCur = recommended.currency;
+                selMethod = recommended;
+            }
             buildDropdown('currencySelect', currencies.map(function (c) {
                 return { value: c, label: c, iconSrc: cached(tokenIcon(c)), badge: '' };
             }), function (val) {
@@ -283,8 +304,8 @@
                 updateNetworkDropdown();
                 updateAmount();
                 updatePayBtn();
-            });
-            buildDropdown('networkSelect', [], function () {});
+            }, selCur);
+            updateNetworkDropdown();
             updateAmount();
             updatePayBtn();
         });
@@ -298,14 +319,15 @@
                 label: paymentNetworkName(m.network, m.token_net_name, m.currency),
                 searchAliases: m.network + ' ' + m.token_net_name,
                 iconSrc: cached(netIcon(m.network)),
-                badge: m.is_popular ? t('hotBadge', '热门') : '',
+                badge: isRecommendedMethod(m) ? t('recommendedBadge', '推荐') : (m.is_popular ? t('hotBadge', '热门') : ''),
+                badgeKey: isRecommendedMethod(m) ? 'recommendedBadge' : (m.is_popular ? 'hotBadge' : ''),
                 fullData: m
             };
         }), function (_, item) {
             selMethod = item.fullData;
             updateAmount();
             updatePayBtn();
-        });
+        }, selMethod ? selMethod.token_net_name : null);
     }
 
     function updateAmount() {
@@ -538,12 +560,19 @@
 
     window.Payment = {
         init: function (config) {
+            var version = ++selectionVersion;
             cfg = config || {};
             tradeId = cfg.trade_id;
             selCur = '';
             selMethod = null;
+            methods = [];
+            networkSort = '';
+            var notice = document.getElementById('recommendedNetwork');
+            if (notice) notice.hidden = true;
             resetTrigger('currencySelect', t('selectCurrency', '选择货币'));
             resetTrigger('networkSelect', t('selectNetwork', '选择网络'));
+            buildDropdown('currencySelect', [], function () {});
+            buildDropdown('networkSelect', [], function () {});
             updateAmount();
             updatePayBtn();
             document.addEventListener('click', function () {
@@ -572,19 +601,21 @@
             })
                 .then(function (r) { return r.json(); })
                 .then(function (res) {
+                    if (version !== selectionVersion) return;
                     if (res.status_code === 200 && res.data && Array.isArray(res.data.methods) && res.data.methods.length) {
                         methods = res.data.methods;
                         networkSort = typeof res.data.network_sort === 'string' ? res.data.network_sort : '';
-                        initSelectionUI();
+                        initSelectionUI(version);
                     } else {
                         methods = [];
                         networkSort = '';
                         showToast(res.message || t('toastLoadFailed', '无法加载付款网络'), 'error');
                     }
                 })
-                .catch(function () { showToast(t('toastNetworkError', '网络错误'), 'error'); });
+                .catch(function () { if (version === selectionVersion) showToast(t('toastNetworkError', '网络错误'), 'error'); });
         },
         initQrPage: function (config) {
+            selectionVersion++;
             cfg = config || {};
             tradeId = cfg.trade_id;
             startCountdown(document.getElementById('timerDisplayQ'), parseInt(cfg.expired_at) || 0, parseInt(cfg.created_at) || 0, showTimeout);
@@ -677,7 +708,8 @@
             created_at: d.created_at,
             trade_id: d.trade_id,
             return_url: d.redirect_url,
-            status: d.status
+            status: d.status,
+            preferRecommended: !d.trade_type && !d.token
         });
     }
 

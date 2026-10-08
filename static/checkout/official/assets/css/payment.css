@@ -38,6 +38,11 @@ button.copy-trigger { font: inherit; border: 1px solid transparent; background: 
 .selection-fiat-preview { color: var(--payment-ink); margin-top: 5px; }
 .selection-network-preview { justify-content: center; color: var(--payment-muted); font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
 .selection-form { padding: 22px 26px 0; }
+#selectionStage .recommended-network { margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--payment-line); }
+#selectionStage .recommended-network-heading { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+#selectionStage .recommended-network-heading img { width: 20px; height: 20px; flex-shrink: 0; object-fit: contain; }
+#selectionStage .recommended-network-heading strong { min-width: 0; color: var(--payment-green); font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+#selectionStage .recommended-network p { margin-top: 6px; color: var(--payment-muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
 .selection-form .form-label { color: var(--payment-muted); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; margin-bottom: 7px; }
 .selection-form .custom-select { margin-bottom: 16px; }
 .selection-form .custom-select:last-child { margin-bottom: 0; }
