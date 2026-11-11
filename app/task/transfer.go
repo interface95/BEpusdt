@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -302,6 +301,22 @@ func hasLookbackOrders(tradeType []model.TradeType) bool {
 	return count > 0
 }
 
+// lookbackOrdersPending 判断这些订单中是否还有需要回溯的，条件与 hasLookbackOrders 相同
+func lookbackOrdersPending(orderIDs []int64) (bool, error) {
+	if len(orderIDs) == 0 {
+		return false, nil
+	}
+
+	var count int64
+	err := model.Db.Model(&model.Order{}).
+		Where("id in (?)", orderIDs).
+		Where("status in (?)", receivableOrderStatuses()).
+		Where("expired_at > ?", time.Now().Add(model.GetLookbackHour())).
+		Count(&count).Error
+
+	return count > 0, err
+}
+
 func getLookbackUnix(network model.Network) (startAt, endAt int64, ok bool) {
 	startAt, endAt, orderIDs, ok := pendingLookbackUnix(network)
 	if ok {
@@ -343,11 +358,16 @@ func pendingLookbackUnix(network model.Network) (startAt, endAt int64, orderIDs 
 	// 起点：最早的创建时间（已按 created_at asc 排序）
 	startAt = pending[0].CreatedAt.Time().Unix()
 
-	// 终点：最晚的已过期 expired_at；若全部尚未过期则用当前时间
-	endAt = time.Now().Unix()
+	// 终点：覆盖每个订单的有效期，取各订单 min(过期时间, 当前时间) 的最大值
+	now := time.Now()
+	endAt = startAt
 	for _, o := range pending {
-		if o.ExpiredAt.Before(time.Now()) && o.ExpiredAt.Unix() > startAt {
-			endAt = o.ExpiredAt.Unix()
+		end := o.ExpiredAt
+		if end.After(now) {
+			end = now
+		}
+		if end.Unix() > endAt {
+			endAt = end.Unix()
 		}
 	}
 
@@ -407,16 +427,21 @@ func amountMatch(amount decimal.Decimal, target, tradeType string) bool {
 	case model.Classic:
 		return amount.String() == target
 	case model.HasPrefix:
-		s := amount.String()
-		if !strings.HasPrefix(s, target) {
+		t, err := decimal.NewFromString(target)
+		if err != nil {
+			log.Warn(err.Error())
+
 			return false
 		}
-		rest := s[len(target):]
-		if rest == "" {
-			return true
+
+		// 订单金额去掉了末尾的 0（1.50 存为 1.5），直接按字符串比前缀会让 1.5 的订单吃掉 1.51 的付款；
+		// 按原子精度和订单金额小数位中的较大者截断实付金额再精确比较，只容忍精度以下的多付
+		_, precision := model.GetAtomicity(model.TradeType(tradeType))
+		if p := abs(t.Exponent()); p > precision {
+			precision = p
 		}
 
-		return strings.Contains(target, ".") || strings.HasPrefix(rest, ".")
+		return amount.Truncate(precision).Equal(t)
 	case model.RoundOff:
 		t, err := decimal.NewFromString(target)
 		if err != nil {

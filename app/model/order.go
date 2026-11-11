@@ -85,8 +85,8 @@ type Order struct {
 	Username          string     `gorm:"column:username;type:varchar(64);not null;default:''" json:"-"`
 	DisplayName       string     `gorm:"column:display_name;type:varchar(128);not null;default:''" json:"-"`
 	ApiType           string     `gorm:"column:api_type;type:varchar(20);not null;default:'epusdt';comment:API类型" json:"api_type"`
-	ReturnUrl         string     `gorm:"column:return_url;type:varchar(255);not null;default:'';comment:同步地址" json:"return_url"`
-	NotifyUrl         string     `gorm:"column:notify_url;type:varchar(255);not null;default:'';comment:异步地址" json:"notify_url"`
+	ReturnUrl         string     `gorm:"column:return_url;type:text;not null;default:'';comment:同步地址" json:"return_url"`
+	NotifyUrl         string     `gorm:"column:notify_url;type:text;not null;default:'';comment:异步地址" json:"notify_url"`
 	NotifyNum         int        `gorm:"column:notify_num;not null;default:0;index:idx_order_notify_retry,priority:3;comment:回调次数" json:"notify_num"`
 	NotifyState       int        `gorm:"column:notify_state;not null;default:0;index:idx_order_notify_retry,priority:2;comment:回调状态 1：成功 0：失败" json:"notify_state"`
 	NotifyLeaseToken  string     `gorm:"column:notify_lease_token;type:varchar(64);not null;default:''" json:"-"`
